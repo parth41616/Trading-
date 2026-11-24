@@ -400,4 +400,24 @@ def get_news():
                     color = "#10B981"
                 elif any(w in title.lower() for w in ['fall', 'drop', 'low', 'loss']): 
                     sentiment = "Bearish 📉"
-                    col
+                    color = "#EF4444"
+                
+                filtered.append({
+                    "title": title, 
+                    "url": art['url'], 
+                    "sentiment": sentiment, 
+                    "color": color
+                })
+            if len(filtered) >= 3: 
+                break
+        return filtered
+    except: 
+        return []
+
+st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Market News & Sentiment</div><br>', unsafe_allow_html=True)
+news_articles = get_news()
+if news_articles:
+    for article in news_articles:
+        st.markdown(f"🔹 **[{article['title']}]({article['url']})**")
+        st.markdown(f"<span style='color:{article['color']}; font-size:12px; font-weight:bold;'>{article['sentiment']}</span><br>", unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
