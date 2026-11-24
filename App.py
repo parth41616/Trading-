@@ -70,8 +70,10 @@ def get_market_sessions():
     }
     result = []
     for name, (start, end, local_time) in sessions.items():
-        if start < end: is_open = start <= local_time <= end
-        else: is_open = local_time >= start or local_time <= end
+        if start < end: 
+            is_open = start <= local_time <= end
+        else: 
+            is_open = local_time >= start or local_time <= end
         color = "#10B981" if is_open else "#EF4444"
         status = "OPEN 🟢" if is_open else "CLOSED 🔴"
         result.append(f'<div class="session-row"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
@@ -100,7 +102,8 @@ def get_pro_signal():
         gold_data['RSI'] = 100 - (100 / (1 + rs))
         gold_data.dropna(inplace=True)
 
-        if len(gold_data) < 50: return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Not enough data"
+        if len(gold_data) < 50: 
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Not enough data"
 
         gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
         h1_trend = "UP" if gold_1h['Close'].iloc[-1] > gold_1h['SMA_50'].iloc[-1] else "DOWN"
@@ -153,7 +156,7 @@ def get_pro_signal():
             sl, tp1, tp2 = 0, 0, 0
 
         return direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason
-    except:
+    except Exception as e:
         return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "System Error"
 
 # --- 2. MTF TRENDS ---
@@ -174,7 +177,8 @@ def get_mtf_trends():
 @st.cache_data(ttl=60)
 def get_sentiment():
     df = fetch_twelvedata("XAU/USD", "15min", 50)
-    if df.empty: return 50, 50
+    if df.empty: 
+        return 50, 50
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -187,26 +191,22 @@ def get_sentiment():
 @st.cache_data(ttl=300)
 def get_volume_profile():
     df = fetch_twelvedata("XAU/USD", "15min", 200)
-    if df.empty: return []
+    if df.empty: 
+        return []
     
-    # Price ne 10 buckets ma divide kariye
     price_min, price_max = df['Low'].min(), df['High'].max()
     bins = np.linspace(price_min, price_max, 11)
     
-    # Bin assign kariye
     df['Bin'] = pd.cut(df['Close'], bins=bins, labels=False)
     vol_profile = df.groupby('Bin')['Volume'].sum().reset_index()
     
-    # Top 2 High Volume areas
     top_volumes = vol_profile.nlargest(2, 'Volume')
     result = []
     for idx, row in top_volumes.iterrows():
         bin_idx = int(row['Bin'])
-        # Bin index thi price level kadho
         price_level = (bins[bin_idx] + bins[bin_idx+1]) / 2
         result.append(round(price_level, 2))
     
-    # Result sort kariye (low to high)
     result.sort()
     return result
 
@@ -214,9 +214,12 @@ def get_volume_profile():
 def get_ai_chatbot_response(query, direction, confidence, h1_trend, dxy_trend, entry):
     query = query.lower()
     if "buy" in query or "sell" in query or "trade" in query or "levu" in query:
-        if direction == "BUY": return f"AI keh chhe ke BUY karo. Entry: {entry}, Confidence: {confidence:.1f}%. 1H Trend UP chhe."
-        elif direction == "SELL": return f"AI keh chhe ke SELL karo. Entry: {entry}, Confidence: {confidence:.1f}%. 1H Trend DOWN chhe."
-        else: return f"Abhi WAIT karo. AI ane trend ma takkar chhe ({h1_trend} vs {dxy_trend}). Risk na lo."
+        if direction == "BUY": 
+            return f"AI keh chhe ke BUY karo. Entry: {entry}, Confidence: {confidence:.1f}%. 1H Trend UP chhe."
+        elif direction == "SELL": 
+            return f"AI keh chhe ke SELL karo. Entry: {entry}, Confidence: {confidence:.1f}%. 1H Trend DOWN chhe."
+        else: 
+            return f"Abhi WAIT karo. AI ane trend ma takkar chhe ({h1_trend} vs {dxy_trend}). Risk na lo."
     elif "news" in query or "khabar" in query:
         return "News section ma jao, tya latest Bullish/Bearish news dekhai jashe."
     elif "risk" in query or "lot" in query:
@@ -304,7 +307,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- VOLUME PROFILE (FIXED) ---
+# --- VOLUME PROFILE ---
 if vol_levels and len(vol_levels) >= 2:
     st.markdown(f"""
     <div class="card">
@@ -322,9 +325,10 @@ if vol_levels and len(vol_levels) >= 2:
     </div>
     """, unsafe_allow_html=True)
 
-# --- 5. FIBONACCI CARD (FIXED) ---
+# --- 5. FIBONACCI CARD ---
 def get_fibonacci_levels(df):
-    if df.empty or len(df) < 20: return []
+    if df.empty or len(df) < 20: 
+        return {}
     high, low = df['High'].tail(50).max(), df['Low'].tail(50).min()
     diff = high - low
     return {"0.0%": high, "23.6%": high-(diff*0.236), "38.2%": high-(diff*0.382), "50.0%": high-(diff*0.5), "61.8%": high-(diff*0.618), "100%": low}
@@ -356,7 +360,7 @@ if user_query:
     st.markdown(f'<div class="chat-box"><span style="color:#FFD700;">AI:</span> {bot_response}</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ECONOMIC CALENDAR (FIXED) ---
+# --- ECONOMIC CALENDAR ---
 @st.cache_data(ttl=3600)
 def get_economic_calendar():
     try:
@@ -365,7 +369,8 @@ def get_economic_calendar():
         data = response.json()
         filtered = [item for item in data if item['country'] == 'USD' and item['impact'] == 'High']
         return filtered[:3]
-    except: return []
+    except: 
+        return []
 
 st.markdown('<div class="card"><div class="title" style="font-size: 16px;">📅 High Impact US News</div><br>', unsafe_allow_html=True)
 calendar_events = get_economic_calendar()
@@ -373,7 +378,8 @@ if calendar_events:
     for event in calendar_events:
         st.markdown(f"🚨 **{event['title']}**")
         st.markdown(f"<span style='color:#9CA3AF; font-size:12px;'>Time: {event['date']} | Forecast: {event.get('forecast', 'N/A')}</span><br>", unsafe_allow_html=True)
-else: st.write("Koi moti news nathi aaj.")
+else: 
+    st.write("Koi moti news nathi aaj.")
 st.markdown('</div>', unsafe_allow_html=True)
 
 # --- NEWS CARD ---
@@ -390,4 +396,4 @@ def get_news():
                 sentiment = "Neutral ⚖️"; color = "#9CA3AF"
                 if any(w in title.lower() for w in ['rise', 'surge', 'high', 'inflation']): sentiment = "Bullish 📈"; color = "#10B981"
                 elif any(w in title.lower() for w in ['fall', 'drop', 'low', 'loss']): sentiment = "Bearish 📉"; color = "#EF4444"
-            
+                filtered.append({"title": title, "url": art['url'], "sentiment":
