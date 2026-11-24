@@ -17,7 +17,7 @@ st_autorefresh(interval=60 * 1000, limit=None, key="auto_refresh")
 TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 
 # --- APP DESIGN ---
-st.set_page_config(page_title="Gold AI Pro Max", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold AI Ultimate", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -183,24 +183,34 @@ def get_sentiment():
     current_rsi = rsi.iloc[-1]
     return round(current_rsi, 1), round(100 - current_rsi, 1)
 
-# --- 4. VOLUME PROFILE (Support/Resistance) ---
+# --- 4. VOLUME PROFILE ---
 @st.cache_data(ttl=300)
 def get_volume_profile():
     df = fetch_twelvedata("XAU/USD", "15min", 200)
     if df.empty: return []
+    
     # Price ne 10 buckets ma divide kariye
     price_min, price_max = df['Low'].min(), df['High'].max()
     bins = np.linspace(price_min, price_max, 11)
+    
+    # Bin assign kariye
     df['Bin'] = pd.cut(df['Close'], bins=bins, labels=False)
     vol_profile = df.groupby('Bin')['Volume'].sum().reset_index()
-    top_volumes = vol_profile.nlargest(2, 'Volume') # Top 2 High Volume areas
+    
+    # Top 2 High Volume areas
+    top_volumes = vol_profile.nlargest(2, 'Volume')
     result = []
     for idx, row in top_volumes.iterrows():
-        price_level = (bins[row['Bin']] + bins[row['Bin']+1]) / 2
+        bin_idx = int(row['Bin'])
+        # Bin index thi price level kadho
+        price_level = (bins[bin_idx] + bins[bin_idx+1]) / 2
         result.append(round(price_level, 2))
+    
+    # Result sort kariye (low to high)
+    result.sort()
     return result
 
-# --- AI CHATBOT LOGIC (Rule-based) ---
+# --- AI CHATBOT LOGIC ---
 def get_ai_chatbot_response(query, direction, confidence, h1_trend, dxy_trend, entry):
     query = query.lower()
     if "buy" in query or "sell" in query or "trade" in query or "levu" in query:
@@ -294,8 +304,8 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- VOLUME PROFILE ---
-if vol_levels:
+# --- VOLUME PROFILE (FIXED) ---
+if vol_levels and len(vol_levels) >= 2:
     st.markdown(f"""
     <div class="card">
         <div class="title" style="font-size: 16px;">🔊 High Volume Zones (S/R)</div>
@@ -312,7 +322,7 @@ if vol_levels:
     </div>
     """, unsafe_allow_html=True)
 
-# --- 5. FIBONACCI CARD ---
+# --- 5. FIBONACCI CARD (FIXED) ---
 def get_fibonacci_levels(df):
     if df.empty or len(df) < 20: return []
     high, low = df['High'].tail(50).max(), df['Low'].tail(50).min()
@@ -346,7 +356,7 @@ if user_query:
     st.markdown(f'<div class="chat-box"><span style="color:#FFD700;">AI:</span> {bot_response}</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ECONOMIC CALENDAR ---
+# --- ECONOMIC CALENDAR (FIXED) ---
 @st.cache_data(ttl=3600)
 def get_economic_calendar():
     try:
@@ -380,9 +390,4 @@ def get_news():
                 sentiment = "Neutral ⚖️"; color = "#9CA3AF"
                 if any(w in title.lower() for w in ['rise', 'surge', 'high', 'inflation']): sentiment = "Bullish 📈"; color = "#10B981"
                 elif any(w in title.lower() for w in ['fall', 'drop', 'low', 'loss']): sentiment = "Bearish 📉"; color = "#EF4444"
-                filtered.append({"title": title, "url": art['url'], "sentiment": sentiment, "color": color})
-            if len(filtered) >= 3: break
-        return filtered
-    except: return []
-
-st.mar
+            
