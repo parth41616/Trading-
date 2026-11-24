@@ -1,6 +1,5 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -9,9 +8,13 @@ from newsapi import NewsApiClient
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
+import requests
 
 # --- AUTO REFRESH (60 seconds) ---
 st_autorefresh(interval=60 * 1000, limit=None, key="auto_refresh")
+
+# --- TWELVE DATA API KEY ---
+TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 
 # --- APP DESIGN ---
 st.set_page_config(page_title="Gold Live AI", page_icon="🪙", layout="centered")
@@ -26,7 +29,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold Live AI (Pro)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Live Price, AI Signals & News</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Twelve Data Live Price, AI Signals & News</div>', unsafe_allow_html=True)
 
 # --- MARKET TIMING ---
 def get_market_timing():
@@ -42,22 +45,37 @@ def get_market_timing():
 timing_text, timing_color = get_market_timing()
 st.markdown(f'<div class="timing-box"><span style="color: #9CA3AF;">Market Timing:</span> <span style="color: {timing_color}; font-weight: bold;">{timing_text}</span></div>', unsafe_allow_html=True)
 
-# --- AI LOGIC (Super Safe Mode) ---
+# --- TWELVE DATA FETCH ---
+@st.cache_data(ttl=60)
+def fetch_twelvedata(symbol, interval, outputsize):
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
+    try:
+        response = requests.get(url, timeout=15)
+        data = response.json()
+        if data.get("status") == "error" or "values" not in data:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(data["values"])
+        df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        df.set_index('datetime', inplace=True)
+        df.sort_index(inplace=True)
+        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        return df
+    except:
+        return pd.DataFrame()
+
+# --- AI LOGIC (Twelve Data thi) ---
 @st.cache_data(ttl=60) 
 def get_pro_signal():
     try:
-        # Live data try karishu
-        gold_data = yf.download("GC=F", period="60d", interval="15m", progress=False)
-        gold_1h = yf.download("GC=F", period="60d", interval="1h", progress=False)
-        dxy = yf.download("DX-Y.NYB", period="60d", interval="15m", progress=False)
+        # Twelve Data thi data lavvu
+        gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
+        gold_1h = fetch_twelvedata("XAU/USD", "1h", 200)
+        dxy = fetch_twelvedata("DXY", "15min", 500)
 
-        # Jo data khali hoy to WAIT aapshu (App crash nahi thay)
         if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Market Data Offline"
-
-        for df in [gold_data, gold_1h, dxy]:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Twelve Data Limit / Error"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -124,7 +142,7 @@ def get_pro_signal():
         return direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason
 
     except Exception as e:
-        return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "System Offline / Error"
+        return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "System Error"
 
 # --- NEWS LOGIC ---
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
@@ -155,7 +173,7 @@ def get_news():
         return []
 
 # --- APP UI ---
-with st.spinner('Live Data Analysis...'):
+with st.spinner('Twelve Data Live Analysis...'):
     direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason = get_pro_signal()
     news_articles = get_news()
 
@@ -188,7 +206,7 @@ dxy_color = '#10B981' if dxy_trend == 'UP' else '#EF4444'
 card_html = f"""
 <div style="background-color: #1F2937; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #374151; font-family: sans-serif;">
     <div style="display: flex; justify-content: space-between;">
-        <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live AI Signal</span>
+        <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live AI Signal (Twelve Data)</span>
     </div>
     
     <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
