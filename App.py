@@ -17,7 +17,7 @@ st_autorefresh(interval=60 * 1000, limit=None, key="auto_refresh")
 TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 
 # --- APP DESIGN ---
-st.set_page_config(page_title="Gold Live AI", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold Live AI Pro", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -26,28 +26,22 @@ st.markdown("""
     .subtitle { color: #9CA3AF; font-size: 14px; }
     .timing-box { background-color: #1F2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; margin-bottom: 15px; text-align: center;}
     .session-row { display: flex; justify-content: space-between; margin-bottom: 8px; padding: 5px; border-bottom: 1px solid #374151; }
+    .mtf-box { background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1; margin: 0 2px;}
+    .fib-box { background-color: #111827; padding: 5px; border-radius: 5px; text-align: center; margin: 2px; font-size: 13px;}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🪙 Gold Live AI (Pro)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Live Price, AI Signals & Market Sessions</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🪙 Gold Live AI (Pro Max)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">AI Signals + Risk + MTF + Fibo</div>', unsafe_allow_html=True)
 
-# --- MARKET SESSIONS LOGIC (4 Markets) ---
+# --- 1. MARKET SESSIONS ---
 def get_market_sessions():
     now_utc = datetime.now(pytz.utc)
-    
-    # Different timezones
-    sydney_tz = pytz.timezone('Australia/Sydney')
-    tokyo_tz = pytz.timezone('Asia/Tokyo')
-    london_tz = pytz.timezone('Europe/London')
-    ny_tz = pytz.timezone('America/New_York')
+    sydney_time = now_utc.astimezone(pytz.timezone('Australia/Sydney')).time()
+    tokyo_time = now_utc.astimezone(pytz.timezone('Asia/Tokyo')).time()
+    london_time = now_utc.astimezone(pytz.timezone('Europe/London')).time()
+    ny_time = now_utc.astimezone(pytz.timezone('America/New_York')).time()
 
-    sydney_time = now_utc.astimezone(sydney_tz).time()
-    tokyo_time = now_utc.astimezone(tokyo_tz).time()
-    london_time = now_utc.astimezone(london_tz).time()
-    ny_time = now_utc.astimezone(ny_tz).time()
-
-    # Session timings (Standard UTC based converted to local)
     sessions = {
         "🇦🇺 Sydney": (time(22, 0), time(7, 0), sydney_time),
         "🇯🇵 Tokyo": (time(0, 0), time(9, 0), tokyo_time),
@@ -59,19 +53,17 @@ def get_market_sessions():
     for name, (start, end, local_time) in sessions.items():
         if start < end:
             is_open = start <= local_time <= end
-        else: # Overnight session (like Sydney)
+        else:
             is_open = local_time >= start or local_time <= end
-            
-        color = "#10B981" if is_open else "#EF4444" # Green if open, Red if closed
+        color = "#10B981" if is_open else "#EF4444"
         status = "OPEN 🟢" if is_open else "CLOSED 🔴"
         result.append(f'<div class="session-row"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
-    
     return "".join(result)
 
 sessions_html = get_market_sessions()
 st.markdown(f'<div class="timing-box"><div style="color: #FFD700; font-weight: bold; margin-bottom: 10px;">🌍 Global Forex Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
 
-# --- TWELVE DATA FETCH ---
+# --- DATA FETCH FUNCTION ---
 @st.cache_data(ttl=60)
 def fetch_twelvedata(symbol, interval, outputsize):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
@@ -80,7 +72,6 @@ def fetch_twelvedata(symbol, interval, outputsize):
         data = response.json()
         if data.get("status") == "error" or "values" not in data:
             return pd.DataFrame()
-        
         df = pd.DataFrame(data["values"])
         df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
         df['datetime'] = pd.to_datetime(df['datetime'])
@@ -91,7 +82,29 @@ def fetch_twelvedata(symbol, interval, outputsize):
     except:
         return pd.DataFrame()
 
-# --- AI LOGIC (Twelve Data) ---
+# --- 2. MULTI-TIMEFRAME (MTF) DASHBOARD ---
+@st.cache_data(ttl=60)
+def get_mtf_trends():
+    timeframes = {"5min": "5M", "15min": "15M", "1h": "1H", "4h": "4H"}
+    trends = {}
+    for tf, label in timeframes.items():
+        df = fetch_twelvedata("XAU/USD", tf, 50)
+        if not df.empty and len(df) >= 20:
+            sma = df['Close'].rolling(window=20).mean()
+            trends[label] = "BUY" if df['Close'].iloc[-1] > sma.iloc[-1] else "SELL"
+        else:
+            trends[label] = "N/A"
+    return trends
+
+mtf_trends = get_mtf_trends()
+mtf_html = '<div style="display: flex; justify-content: space-between; margin-bottom: 15px;">'
+for tf, trend in mtf_trends.items():
+    color = "#10B981" if trend == "BUY" else "#EF4444" if trend == "SELL" else "#9CA3AF"
+    mtf_html += f'<div class="mtf-box"><div style="color:#9CA3AF; font-size:12px;">{tf}</div><div style="color:{color}; font-weight:bold;">{trend}</div></div>'
+mtf_html += '</div>'
+st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">📊 Multi-Timeframe Trend</div>{mtf_html}</div>', unsafe_allow_html=True)
+
+# --- AI LOGIC (Main Signal) ---
 @st.cache_data(ttl=60) 
 def get_pro_signal():
     try:
@@ -100,7 +113,7 @@ def get_pro_signal():
         dxy = fetch_twelvedata("DXY", "15min", 500)
 
         if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data Error (Limit or Network)"
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data Error"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -168,6 +181,25 @@ def get_pro_signal():
 
     except Exception as e:
         return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "System Error"
+
+# --- 3. FIBONACCI LEVELS ---
+def get_fibonacci_levels(df):
+    if df.empty or len(df) < 20: return []
+    high = df['High'].tail(50).max()
+    low = df['Low'].tail(50).min()
+    diff = high - low
+    levels = {
+        "0.0% (High)": high,
+        "23.6%": high - (diff * 0.236),
+        "38.2%": high - (diff * 0.382),
+        "50.0%": high - (diff * 0.5),
+        "61.8%": high - (diff * 0.618),
+        "100.0% (Low)": low
+    }
+    return levels
+
+gold_df_for_fib = fetch_twelvedata("XAU/USD", "15min", 100)
+fib_levels = get_fibonacci_levels(gold_df_for_fib)
 
 # --- NEWS LOGIC ---
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
@@ -268,6 +300,54 @@ card_html = f"""
 </div>
 """
 components.html(card_html, height=320)
+
+# --- 4. FIBONACCI CARD ---
+if fib_levels:
+    st.markdown('<div class="card"><div class="title" style="font-size: 16px;">📐 Fibonacci Retracement (15M)</div><div style="display: flex; flex-wrap: wrap; margin-top:10px;">', unsafe_allow_html=True)
+    for level, price in fib_levels.items():
+        st.markdown(f'<div class="fib-box" style="background-color: #111827;"><span style="color:#9CA3AF;">{level}:</span> <span style="color:#FFD700; font-weight:bold;">{round(price, 2)}</span></div>', unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+# --- 5. RISK CALCULATOR ---
+st.markdown('<div class="card"><div class="title" style="font-size: 16px;">🧮 Risk Calculator (Lot Size)</div>', unsafe_allow_html=True)
+col1, col2, col3 = st.columns(3)
+with col1:
+    balance = st.number_input("Balance ($)", value=1000, step=100)
+with col2:
+    risk_pct = st.number_input("Risk (%)", value=1.0, step=0.5)
+with col3:
+    sl_points = st.number_input("SL Points", value=30, step=10)
+
+if balance > 0 and risk_pct > 0 and sl_points > 0:
+    risk_amount = balance * (risk_pct / 100)
+    lot_size = risk_amount / (sl_points * 10)
+    st.markdown(f'<div style="text-align: center; margin-top: 10px;"><span style="color:#9CA3AF;">Recommended Lot Size:</span> <span style="color:#10B981; font-size: 24px; font-weight: bold;">{round(lot_size, 2)} Lots</span></div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# --- 6. ECONOMIC CALENDAR (Live ForexFactory API) ---
+@st.cache_data(ttl=3600)
+def get_economic_calendar():
+    try:
+        # ForexFactory na data ne fetch karva mate
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        # Fakt US ane Gold ne asar kare evi high impact news jodiye
+        filtered = [item for item in data if item['country'] == 'USD' and item['impact'] == 'High']
+        return filtered[:3] # Top 3 j batavshu
+    except:
+        return []
+
+st.markdown('<div class="card"><div class="title" style="font-size: 16px;">📅 High Impact US News</div><br>', unsafe_allow_html=True)
+calendar_events = get_economic_calendar()
+if calendar_events:
+    for event in calendar_events:
+        st.markdown(f"🚨 **{event['title']}**")
+        st.markdown(f"<span style='color:#9CA3AF; font-size:12px;'>Time: {event['date']} | Forecast: {event.get('forecast', 'N/A')}</span><br>", unsafe_allow_html=True)
+else:
+    st.write("Koi moti news nathi aaj.")
+st.markdown('</div>', unsafe_allow_html=True)
 
 # News Card
 st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Market News & Sentiment</div><br>', unsafe_allow_html=True)
