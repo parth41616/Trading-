@@ -8,6 +8,10 @@ from sklearn.ensemble import RandomForestClassifier
 from newsapi import NewsApiClient
 from datetime import datetime, time
 import pytz
+from streamlit_autorefresh import st_autorefresh
+
+# --- AUTO REFRESH (60 seconds) ---
+st_autorefresh(interval=60 * 1000, limit=None, key="auto_refresh")
 
 # --- APP DESIGN ---
 st.set_page_config(page_title="Gold Live AI", page_icon="🪙", layout="centered")
@@ -18,11 +22,12 @@ st.markdown("""
     .title { color: #FFD700; font-size: 24px; font-weight: bold; }
     .subtitle { color: #9CA3AF; font-size: 14px; }
     .timing-box { background-color: #1F2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; margin-bottom: 15px; text-align: center;}
+    .news-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold Live AI (Pro)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Live Price & AI Signals</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Live Price, AI Signals & News</div>', unsafe_allow_html=True)
 
 # --- MARKET TIMING ---
 def get_market_timing():
@@ -38,7 +43,7 @@ def get_market_timing():
 timing_text, timing_color = get_market_timing()
 st.markdown(f'<div class="timing-box"><span style="color: #9CA3AF;">Market Timing:</span> <span style="color: {timing_color}; font-weight: bold;">{timing_text}</span></div>', unsafe_allow_html=True)
 
-# --- AI LOGIC ---
+# --- AI LOGIC (Safe Mode) ---
 @st.cache_data(ttl=60) 
 def get_pro_signal():
     try:
@@ -89,6 +94,7 @@ def get_pro_signal():
         confidence = 0
         reason = "Market condition not clear."
 
+        # Safe Logic: Badha 3 match thay tyare j signal
         if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
             direction = "BUY"
             confidence = ml_prob
@@ -118,10 +124,9 @@ def get_pro_signal():
         return direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason
 
     except Exception as e:
-        # Jo koi pan error aave to app crash na thay
         return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Network / Data Error"
 
-# --- NEWS LOGIC ---
+# --- NEWS LOGIC (Sentiment Added) ---
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
 @st.cache_data(ttl=3600)
 def get_news():
@@ -133,8 +138,23 @@ def get_news():
         for art in articles['articles']:
             title = art['title']
             if title and "[Removed]" not in title and any(word in title.lower() for word in ['gold', 'fed', 'dollar', 'inflation']):
-                filtered.append(art)
-            if len(filtered) >= 3:
+                title_lower = title.lower()
+                sentiment = "Neutral ⚖️"
+                color = "#9CA3AF"
+                if any(word in title_lower for word in ['rise', 'surge', 'gain', 'high', 'inflation', 'bullish']):
+                    sentiment = "Bullish 📈"
+                    color = "#10B981"
+                elif any(word in title_lower for word in ['fall', 'drop', 'down', 'low', 'loss', 'bearish', 'hawkish']):
+                    sentiment = "Bearish 📉"
+                    color = "#EF4444"
+                    
+                filtered.append({
+                    "title": title,
+                    "url": art['url'],
+                    "sentiment": sentiment,
+                    "color": color
+                })
+            if len(filtered) >= 4:
                 break
         return filtered
     except:
@@ -166,7 +186,7 @@ live_chart_html = """
 """
 components.html(live_chart_html, height=200)
 
-# Main Signal Card - FIXED HTML
+# Main Signal Card
 color = '#10B981' if direction == 'BUY' else '#EF4444' if direction == 'SELL' else '#FFD700'
 h1_color = '#10B981' if h1_trend == 'UP' else '#EF4444'
 dxy_color = '#10B981' if dxy_trend == 'UP' else '#EF4444'
@@ -212,11 +232,12 @@ card_html = f"""
 """
 components.html(card_html, height=320)
 
-# News Card
-st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Live Market News</div><br>', unsafe_allow_html=True)
+# News Card with Sentiment
+st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Market News & Sentiment</div><br>', unsafe_allow_html=True)
 if news_articles:
     for article in news_articles:
-        st.markdown(f"🔹 [{article['title']}]({article['url']})")
+        st.markdown(f"🔹 **[{article['title']}]({article['url']})**")
+        st.markdown(f"<span style='color:{article['color']}; font-size:12px; font-weight:bold;'>{article['sentiment']}</span><br>", unsafe_allow_html=True)
 else:
     st.write("News nathi mali.")
 st.markdown('</div>', unsafe_allow_html=True)
