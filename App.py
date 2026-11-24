@@ -25,25 +25,51 @@ st.markdown("""
     .title { color: #FFD700; font-size: 24px; font-weight: bold; }
     .subtitle { color: #9CA3AF; font-size: 14px; }
     .timing-box { background-color: #1F2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; margin-bottom: 15px; text-align: center;}
+    .session-row { display: flex; justify-content: space-between; margin-bottom: 8px; padding: 5px; border-bottom: 1px solid #374151; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold Live AI (Pro)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Twelve Data Live Price, AI Signals & News</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Live Price, AI Signals & Market Sessions</div>', unsafe_allow_html=True)
 
-# --- MARKET TIMING ---
-def get_market_timing():
+# --- MARKET SESSIONS LOGIC (4 Markets) ---
+def get_market_sessions():
     now_utc = datetime.now(pytz.utc)
-    ny_time = now_utc.astimezone(pytz.timezone('America/New_York'))
-    if time(8, 30) <= ny_time.time() <= time(17, 0):
-        return "🟢 US Market OPEN", "#10B981"
-    elif time(3, 0) <= ny_time.time() < time(8, 30):
-        return "🟡 London Session", "#FFD700"
-    else:
-        return "🔴 Asian Session", "#EF4444"
+    
+    # Different timezones
+    sydney_tz = pytz.timezone('Australia/Sydney')
+    tokyo_tz = pytz.timezone('Asia/Tokyo')
+    london_tz = pytz.timezone('Europe/London')
+    ny_tz = pytz.timezone('America/New_York')
 
-timing_text, timing_color = get_market_timing()
-st.markdown(f'<div class="timing-box"><span style="color: #9CA3AF;">Market Timing:</span> <span style="color: {timing_color}; font-weight: bold;">{timing_text}</span></div>', unsafe_allow_html=True)
+    sydney_time = now_utc.astimezone(sydney_tz).time()
+    tokyo_time = now_utc.astimezone(tokyo_tz).time()
+    london_time = now_utc.astimezone(london_tz).time()
+    ny_time = now_utc.astimezone(ny_tz).time()
+
+    # Session timings (Standard UTC based converted to local)
+    sessions = {
+        "🇦🇺 Sydney": (time(22, 0), time(7, 0), sydney_time),
+        "🇯🇵 Tokyo": (time(0, 0), time(9, 0), tokyo_time),
+        "🇬🇧 London": (time(8, 0), time(17, 0), london_time),
+        "🇺🇸 New York": (time(8, 0), time(17, 0), ny_time)
+    }
+
+    result = []
+    for name, (start, end, local_time) in sessions.items():
+        if start < end:
+            is_open = start <= local_time <= end
+        else: # Overnight session (like Sydney)
+            is_open = local_time >= start or local_time <= end
+            
+        color = "#10B981" if is_open else "#EF4444" # Green if open, Red if closed
+        status = "OPEN 🟢" if is_open else "CLOSED 🔴"
+        result.append(f'<div class="session-row"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
+    
+    return "".join(result)
+
+sessions_html = get_market_sessions()
+st.markdown(f'<div class="timing-box"><div style="color: #FFD700; font-weight: bold; margin-bottom: 10px;">🌍 Global Forex Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
 
 # --- TWELVE DATA FETCH ---
 @st.cache_data(ttl=60)
@@ -65,17 +91,16 @@ def fetch_twelvedata(symbol, interval, outputsize):
     except:
         return pd.DataFrame()
 
-# --- AI LOGIC (Twelve Data thi) ---
+# --- AI LOGIC (Twelve Data) ---
 @st.cache_data(ttl=60) 
 def get_pro_signal():
     try:
-        # Twelve Data thi data lavvu
         gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
         gold_1h = fetch_twelvedata("XAU/USD", "1h", 200)
         dxy = fetch_twelvedata("DXY", "15min", 500)
 
         if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Twelve Data Limit / Error"
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data Error (Limit or Network)"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -173,7 +198,7 @@ def get_news():
         return []
 
 # --- APP UI ---
-with st.spinner('Twelve Data Live Analysis...'):
+with st.spinner('Live Data Analysis...'):
     direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason = get_pro_signal()
     news_articles = get_news()
 
@@ -206,7 +231,7 @@ dxy_color = '#10B981' if dxy_trend == 'UP' else '#EF4444'
 card_html = f"""
 <div style="background-color: #1F2937; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #374151; font-family: sans-serif;">
     <div style="display: flex; justify-content: space-between;">
-        <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live AI Signal (Twelve Data)</span>
+        <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live AI Signal</span>
     </div>
     
     <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
