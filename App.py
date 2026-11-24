@@ -10,8 +10,7 @@ from datetime import datetime, time
 import pytz
 
 # --- APP DESIGN ---
-st.set_page_config(page_title="Gold Intraday AI", page_icon="🪙", layout="centered")
-
+st.set_page_config(page_title="Gold Pro AI", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -20,6 +19,7 @@ st.markdown("""
     .subtitle { color: #9CA3AF; font-size: 14px; }
     .signal-buy { color: #10B981; font-size: 22px; font-weight: bold; }
     .signal-sell { color: #EF4444; font-size: 22px; font-weight: bold; }
+    .signal-wait { color: #FFD700; font-size: 22px; font-weight: bold; }
     .level-box { background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px;}
     .level-title { color: #9CA3AF; font-size: 12px; }
     .level-val { color: white; font-size: 16px; font-weight: bold; }
@@ -27,88 +27,111 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🪙 Gold Intraday AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">AI Signals with Market Timing</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🪙 Gold Pro AI (MTF)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Multi-Timeframe & Correlation Analysis</div>', unsafe_allow_html=True)
 
-# --- MARKET TIMING LOGIC (USA Session) ---
+# --- MARKET TIMING ---
 def get_market_timing():
     now_utc = datetime.now(pytz.utc)
     ny_time = now_utc.astimezone(pytz.timezone('America/New_York'))
-    
     if time(8, 30) <= ny_time.time() <= time(17, 0):
-        return "🟢 US Market OPEN (High Volatility)", "#10B981"
+        return "🟢 US Market OPEN", "#10B981"
     elif time(3, 0) <= ny_time.time() < time(8, 30):
-        return "🟡 London Session (Good Volatility)", "#FFD700"
+        return "🟡 London Session", "#FFD700"
     else:
-        return "🔴 Asian Session / Closed (Low Volatility)", "#EF4444"
+        return "🔴 Asian Session (Low Vol)", "#EF4444"
 
 timing_text, timing_color = get_market_timing()
+st.markdown(f'<div class="timing-box"><span style="color: #9CA3AF;">Market Timing:</span> <span style="color: {timing_color}; font-weight: bold;">{timing_text}</span></div>', unsafe_allow_html=True)
 
-st.markdown(f"""
-<div class="timing-box">
-    <div style="color: #9CA3AF; font-size: 14px;">Current Market Timing (New York)</div>
-    <div style="color: {timing_color}; font-size: 18px; font-weight: bold;">{timing_text}</div>
-    <div style="color: #9CA3AF; font-size: 12px; margin-top: 5px;">Tip: US Session ma Gold ma sauthi vadhare movement thay chhe.</div>
-</div>
-""", unsafe_allow_html=True)
-
-# --- AI LOGIC (15-Min Timeframe) ---
+# --- PRO AI LOGIC ---
 @st.cache_data(ttl=300) 
-def get_intraday_signal():
-    # FIX: XAUUSD=X ni jagya e GC=F use karyu chhe jethi intraday data 100% aavshe
-    ticker = "GC=F" 
-    data = yf.download(ticker, period="60d", interval="15m")
+def get_pro_signal():
+    # 1. Main Data (Gold 15M)
+    gold_data = yf.download("GC=F", period="60d", interval="15m", progress=False)
     
-    if data.empty:
-        return "NO DATA", 0, 0, 0, 0, 0
+    # 2. Higher Timeframe (Gold 1H) for Trend
+    gold_1h = yf.download("GC=F", period="60d", interval="1h", progress=False)
+    
+    # 3. Dollar Index (DXY) for Correlation
+    dxy = yf.download("DX-Y.NYB", period="60d", interval="15m", progress=False)
 
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
+    if gold_data.empty or gold_1h.empty or dxy.empty:
+        return "NO DATA", 0, 0, 0, 0, 0, 0, 0
+
+    # Handle MultiIndex
+    for df in [gold_data, gold_1h, dxy]:
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+    # --- Calculate Indicators for Gold 15M ---
+    gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
+    gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
     
-    data['SMA_20'] = data['Close'].rolling(window=20).mean()
-    data['SMA_50'] = data['Close'].rolling(window=50).mean()
-    
-    delta = data['Close'].diff()
+    delta = gold_data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
-    data['RSI'] = 100 - (100 / (1 + rs))
-    data.dropna(inplace=True)
-    
-    data['Target'] = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
-    data.dropna(inplace=True)
-    
-    X = data[['Open', 'High', 'Low', 'Close', 'SMA_20', 'SMA_50', 'RSI']]
-    Y = data['Target']
-    
-    # Check kariye ke data ma ketla rows chhe
-    if len(X) < 50:
-        return "NOT ENOUGH DATA", 0, 0, 0, 0, 0
+    gold_data['RSI'] = 100 - (100 / (1 + rs))
+    gold_data.dropna(inplace=True)
 
+    # --- Calculate 1H Trend ---
+    gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
+    h1_trend = "UP" if gold_1h['Close'].iloc[-1] > gold_1h['SMA_50'].iloc[-1] else "DOWN"
+
+    # --- Calculate DXY Trend ---
+    dxy['SMA_20'] = dxy['Close'].rolling(window=20).mean()
+    dxy_trend = "UP" if dxy['Close'].iloc[-1] > dxy['SMA_20'].iloc[-1] else "DOWN"
+
+    # --- AI Model Training ---
+    gold_data['Target'] = np.where(gold_data['Close'].shift(-1) > gold_data['Close'], 1, 0)
+    gold_data.dropna(inplace=True)
+    
+    X = gold_data[['Open', 'High', 'Low', 'Close', 'SMA_20', 'SMA_50', 'RSI']]
+    Y = gold_data['Target']
+    
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
     model.fit(X_train, Y_train)
     
     latest = X.tail(1)
-    signal = model.predict(latest)
-    prob = model.predict_proba(latest)
-    
-    direction = "BUY" if signal[0] == 1 else "SELL"
-    confidence = prob[0][signal[0]] * 100
-    
+    ml_signal = model.predict(latest)[0]
+    ml_prob = model.predict_proba(latest)[0][ml_signal] * 100
+
+    # --- FINAL PRO LOGIC (MTF + Correlation) ---
+    direction = "WAIT"
+    confidence = 0
+    reason = "Market condition not clear."
+
+    # Logic: Jo AI Buy bole, H1 trend Up hoy, ane Dollar Down hoy to j Buy
+    if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
+        direction = "BUY"
+        confidence = ml_prob
+        reason = "AI Bullish + 1H Trend Up + Dollar Weak"
+    # Logic: Jo AI Sell bole, H1 trend Down hoy, ane Dollar Up hoy to j Sell
+    elif ml_signal == 0 and h1_trend == "DOWN" and dxy_trend == "UP":
+        direction = "SELL"
+        confidence = ml_prob
+        reason = "AI Bearish + 1H Trend Down + Dollar Strong"
+    else:
+        direction = "WAIT"
+        confidence = 0
+        reason = f"No Alignment (AI: {'BUY' if ml_signal==1 else 'SELL'}, 1H: {h1_trend}, DXY: {dxy_trend})"
+
     entry = round(float(latest['Close'].iloc[0]), 2)
     
-    # Intraday Targets
     if direction == "BUY":
-        sl = round(entry - 3.0, 2) 
-        tp1 = round(entry + 4.0, 2) 
-        tp2 = round(entry + 6.0, 2) 
-    else:
+        sl = round(entry - 3.0, 2)
+        tp1 = round(entry + 4.0, 2)
+        tp2 = round(entry + 6.0, 2)
+    elif direction == "SELL":
         sl = round(entry + 3.0, 2)
         tp1 = round(entry - 4.0, 2)
         tp2 = round(entry - 6.0, 2)
+    else:
+        sl, tp1, tp2 = 0, 0, 0
 
-    return direction, confidence, entry, sl, tp1, tp2
+    return direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend
 
 # --- NEWS LOGIC ---
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
@@ -130,55 +153,61 @@ def get_news():
         return []
 
 # --- APP UI ---
-with st.spinner('AI Intraday Analysis kari rahyu chhe...'):
-    direction, confidence, entry, sl, tp1, tp2 = get_intraday_signal()
+with st.spinner('Pro AI Analysis (MTF + DXY)...'):
+    direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend = get_pro_signal()
     news_articles = get_news()
 
-# Jo data na male to error na batavvu
-if direction in ["NO DATA", "NOT ENOUGH DATA"]:
-    st.error("Market data currently unavailable. Please try again in a few minutes.")
+# Main Signal Card
+if direction == "NO DATA":
+    st.error("Data currently unavailable. Please try again.")
 else:
-    # Main Signal Card
+    color = '#10B981' if direction == 'BUY' else '#EF4444' if direction == 'SELL' else '#FFD700'
+    
     card_html = f"""
     <div style="background-color: #1F2937; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #374151; font-family: sans-serif;">
         <div style="display: flex; justify-content: space-between;">
-            <span style="font-size: 18px; font-weight: bold; color: white;">⚡ M15 Intraday Signal (GC=F)</span>
+            <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Pro Signal (M15 + H1 + DXY)</span>
         </div>
         
         <div style="margin-top: 15px; text-align: center;">
-            <span style="color: #9CA3AF; font-size: 14px;">Suggested Entry Price</span><br>
+            <span style="color: #9CA3AF; font-size: 14px;">Current Price</span><br>
             <span style="color: #FFD700; font-size: 28px; font-weight: bold;">${entry}</span>
-        </div>
-        
-        <div style="margin-top: 10px;">
-            <span style="color: #9CA3AF; font-size: 14px;">AI Confidence: <span style="color: #FFD700;">{confidence:.1f}%</span></span>
-            <div style="background-color: #374151; border-radius: 5px; height: 8px; margin-top: 5px;">
-                <div style="background-color: #FFD700; width: {confidence}%; height: 8px; border-radius: 5px;"></div>
-            </div>
         </div>
         
         <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
             <span style="color: #9CA3AF; font-size: 14px;">AI Direction</span><br>
-            <span style="color: {'#10B981' if direction == 'BUY' else '#EF4444'}; font-size: 22px; font-weight: bold;">{direction}</span>
+            <span style="color: {color}; font-size: 26px; font-weight: bold;">{direction}</span>
+            <div style="color: #9CA3AF; font-size: 12px; margin-top: 5px;">{reason}</div>
         </div>
         
-        <div style="display: flex; justify-content: space-between; gap: 10px;">
-            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
+        <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
+            <div style="background-color: #111827; padding: 8px; border-radius: 8px; text-align: center; flex: 1;">
+                <div style="color: #9CA3AF; font-size: 12px;">1H Trend</div>
+                <div style="color: {'#10B981' if h1_trend == 'UP' else '#EF4444'}; font-size: 14px; font-weight: bold;">{h1_trend}</div>
+            </div>
+            <div style="background-color: #111827; padding: 8px; border-radius: 8px; text-align: center; flex: 1;">
+                <div style="color: #9CA3AF; font-size: 12px;">Dollar (DXY)</div>
+                <div style="color: {'#10B981' if dxy_trend == 'UP' else '#EF4444'}; font-size: 14px; font-weight: bold;">{dxy_trend}</div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
+            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
                 <div style="color: #9CA3AF; font-size: 12px;">SL</div>
-                <div style="color: #EF4444; font-size: 16px; font-weight: bold;">{sl}</div>
+                <div style="color: #EF4444; font-size: 16px; font-weight: bold;">{sl if sl != 0 else '--'}</div>
             </div>
-            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
+            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
                 <div style="color: #9CA3AF; font-size: 12px;">TP 1</div>
-                <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp1}</div>
+                <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp1 if tp1 != 0 else '--'}</div>
             </div>
-            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
+            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
                 <div style="color: #9CA3AF; font-size: 12px;">TP 2</div>
-                <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp2}</div>
+                <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp2 if tp2 != 0 else '--'}</div>
             </div>
         </div>
     </div>
     """
-    components.html(card_html, height=320)
+    components.html(card_html, height=360)
 
 # News Card
 st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Live Market News</div><br>', unsafe_allow_html=True)
@@ -188,5 +217,3 @@ if news_articles:
 else:
     st.write("News nathi mali.")
 st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('<div class="subtitle" style="text-align:center;">*Intraday signals M15 par based chhe. MT5 ma confirm kari ne trade lo.*</div>', unsafe_allow_html=True)
