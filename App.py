@@ -28,41 +28,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold Intraday AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">5-Min & 15-Min Analysis with Market Timing</div>', unsafe_allow_html=True)
-
-# --- TRADINGVIEW LIVE CHART (15 Min) ---
-tv_html = """
-<div class="tradingview-widget-container" style="height:400px;width:100%">
-  <div id="tradingview_12345"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget({
-  "autosize": true,
-  "symbol": "OANDA:XAUUSD",
-  "interval": "15",
-  "timezone": "Etc/UTC",
-  "theme": "dark",
-  "style": "1",
-  "locale": "en",
-  "enable_publishing": false,
-  "hide_side_toolbar": true,
-  "allow_symbol_change": false,
-  "container_id": "tradingview_12345"
-});
-  </script>
-</div>
-"""
-components.html(tv_html, height=400)
-st.write("---")
+st.markdown('<div class="subtitle">AI Signals with Market Timing</div>', unsafe_allow_html=True)
 
 # --- MARKET TIMING LOGIC (USA Session) ---
 def get_market_timing():
-    # UTC time ma have
     now_utc = datetime.now(pytz.utc)
-    # USA New York time
     ny_time = now_utc.astimezone(pytz.timezone('America/New_York'))
     
-    # Market timing check (US Session 8:30 AM - 5:00 PM NY time)
     if time(8, 30) <= ny_time.time() <= time(17, 0):
         return "🟢 US Market OPEN (High Volatility)", "#10B981"
     elif time(3, 0) <= ny_time.time() < time(8, 30):
@@ -83,7 +55,6 @@ st.markdown(f"""
 # --- AI LOGIC (15-Min Timeframe) ---
 @st.cache_data(ttl=300) 
 def get_intraday_signal():
-    # 15-minute candle data (60 days no data intraday mate)
     ticker = "XAUUSD=X" 
     data = yf.download(ticker, period="60d", interval="15m")
     
@@ -119,7 +90,7 @@ def get_intraday_signal():
     
     entry = round(float(latest['Close'].iloc[0]), 2)
     
-    # Intraday mate Targets nana rakhya chhe (Gold ma $1 = 10 pips)
+    # Intraday Targets
     if direction == "BUY":
         sl = round(entry - 3.0, 2) 
         tp1 = round(entry + 4.0, 2) 
@@ -206,4 +177,4 @@ else:
     st.write("News nathi mali.")
 st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="subtitle" style="text-align:center;">*Intraday signals M15 par based chhe. 5-Min chart par confirm karo.*</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle" style="text-align:center;">*Intraday signals M15 par based chhe. MT5 ma confirm kari ne trade lo.*</div>', unsafe_allow_html=True)
