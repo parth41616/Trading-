@@ -393,7 +393,11 @@ def get_news():
         for art in articles['articles']:
             title = art['title']
             if title and any(word in title.lower() for word in ['gold', 'fed', 'dollar']):
-                sentiment = "Neutral ⚖️"; color = "#9CA3AF"
-                if any(w in title.lower() for w in ['rise', 'surge', 'high', 'inflation']): sentiment = "Bullish 📈"; color = "#10B981"
-                elif any(w in title.lower() for w in ['fall', 'drop', 'low', 'loss']): sentiment = "Bearish 📉"; color = "#EF4444"
-                filtered.append({"title": title, "url": art['url'], "sentiment":
+                sentiment = "Neutral ⚖️"
+                color = "#9CA3AF"
+                if any(w in title.lower() for w in ['rise', 'surge', 'high', 'inflation']): 
+                    sentiment = "Bullish 📈"
+                    color = "#10B981"
+                elif any(w in title.lower() for w in ['fall', 'drop', 'low', 'loss']): 
+                    sentiment = "Bearish 📉"
+                    col
