@@ -22,7 +22,6 @@ st.markdown("""
     .title { color: #FFD700; font-size: 24px; font-weight: bold; }
     .subtitle { color: #9CA3AF; font-size: 14px; }
     .timing-box { background-color: #1F2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; margin-bottom: 15px; text-align: center;}
-    .news-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -43,16 +42,18 @@ def get_market_timing():
 timing_text, timing_color = get_market_timing()
 st.markdown(f'<div class="timing-box"><span style="color: #9CA3AF;">Market Timing:</span> <span style="color: {timing_color}; font-weight: bold;">{timing_text}</span></div>', unsafe_allow_html=True)
 
-# --- AI LOGIC (Safe Mode) ---
+# --- AI LOGIC (Super Safe Mode) ---
 @st.cache_data(ttl=60) 
 def get_pro_signal():
     try:
+        # Live data try karishu
         gold_data = yf.download("GC=F", period="60d", interval="15m", progress=False)
         gold_1h = yf.download("GC=F", period="60d", interval="1h", progress=False)
         dxy = yf.download("DX-Y.NYB", period="60d", interval="15m", progress=False)
 
+        # Jo data khali hoy to WAIT aapshu (App crash nahi thay)
         if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data unavailable"
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Market Data Offline"
 
         for df in [gold_data, gold_1h, dxy]:
             if isinstance(df.columns, pd.MultiIndex):
@@ -94,7 +95,6 @@ def get_pro_signal():
         confidence = 0
         reason = "Market condition not clear."
 
-        # Safe Logic: Badha 3 match thay tyare j signal
         if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
             direction = "BUY"
             confidence = ml_prob
@@ -124,9 +124,9 @@ def get_pro_signal():
         return direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason
 
     except Exception as e:
-        return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Network / Data Error"
+        return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "System Offline / Error"
 
-# --- NEWS LOGIC (Sentiment Added) ---
+# --- NEWS LOGIC ---
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
 @st.cache_data(ttl=3600)
 def get_news():
@@ -147,13 +147,7 @@ def get_news():
                 elif any(word in title_lower for word in ['fall', 'drop', 'down', 'low', 'loss', 'bearish', 'hawkish']):
                     sentiment = "Bearish 📉"
                     color = "#EF4444"
-                    
-                filtered.append({
-                    "title": title,
-                    "url": art['url'],
-                    "sentiment": sentiment,
-                    "color": color
-                })
+                filtered.append({"title": title, "url": art['url'], "sentiment": sentiment, "color": color})
             if len(filtered) >= 4:
                 break
         return filtered
@@ -232,7 +226,7 @@ card_html = f"""
 """
 components.html(card_html, height=320)
 
-# News Card with Sentiment
+# News Card
 st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Market News & Sentiment</div><br>', unsafe_allow_html=True)
 if news_articles:
     for article in news_articles:
