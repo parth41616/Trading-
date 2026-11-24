@@ -8,9 +8,10 @@ from sklearn.ensemble import RandomForestClassifier
 from newsapi import NewsApiClient
 from datetime import datetime, time
 import pytz
+import time as tm
 
 # --- APP DESIGN ---
-st.set_page_config(page_title="Gold Pro AI", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold Live AI", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -27,8 +28,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🪙 Gold Pro AI (MTF)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Multi-Timeframe & Correlation Analysis</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🪙 Gold Live AI (MTF)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Live Price & AI Pro Signals</div>', unsafe_allow_html=True)
 
 # --- MARKET TIMING ---
 def get_market_timing():
@@ -39,35 +40,28 @@ def get_market_timing():
     elif time(3, 0) <= ny_time.time() < time(8, 30):
         return "🟡 London Session", "#FFD700"
     else:
-        return "🔴 Asian Session (Low Vol)", "#EF4444"
+        return "🔴 Asian Session", "#EF4444"
 
 timing_text, timing_color = get_market_timing()
 st.markdown(f'<div class="timing-box"><span style="color: #9CA3AF;">Market Timing:</span> <span style="color: {timing_color}; font-weight: bold;">{timing_text}</span></div>', unsafe_allow_html=True)
 
 # --- PRO AI LOGIC ---
-@st.cache_data(ttl=300) 
+@st.cache_data(ttl=60)  # Data cache 60 seconds ma refresh thashe
 def get_pro_signal():
-    # 1. Main Data (Gold 15M)
+    # Live Data mate GC=F vaparishu
     gold_data = yf.download("GC=F", period="60d", interval="15m", progress=False)
-    
-    # 2. Higher Timeframe (Gold 1H) for Trend
     gold_1h = yf.download("GC=F", period="60d", interval="1h", progress=False)
-    
-    # 3. Dollar Index (DXY) for Correlation
     dxy = yf.download("DX-Y.NYB", period="60d", interval="15m", progress=False)
 
     if gold_data.empty or gold_1h.empty or dxy.empty:
-        return "NO DATA", 0, 0, 0, 0, 0, 0, 0
+        return "NO DATA", 0, 0, 0, 0, 0, "N/A", "N/A"
 
-    # Handle MultiIndex
     for df in [gold_data, gold_1h, dxy]:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-    # --- Calculate Indicators for Gold 15M ---
     gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
     gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
-    
     delta = gold_data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -75,15 +69,12 @@ def get_pro_signal():
     gold_data['RSI'] = 100 - (100 / (1 + rs))
     gold_data.dropna(inplace=True)
 
-    # --- Calculate 1H Trend ---
     gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
     h1_trend = "UP" if gold_1h['Close'].iloc[-1] > gold_1h['SMA_50'].iloc[-1] else "DOWN"
 
-    # --- Calculate DXY Trend ---
     dxy['SMA_20'] = dxy['Close'].rolling(window=20).mean()
     dxy_trend = "UP" if dxy['Close'].iloc[-1] > dxy['SMA_20'].iloc[-1] else "DOWN"
 
-    # --- AI Model Training ---
     gold_data['Target'] = np.where(gold_data['Close'].shift(-1) > gold_data['Close'], 1, 0)
     gold_data.dropna(inplace=True)
     
@@ -98,17 +89,14 @@ def get_pro_signal():
     ml_signal = model.predict(latest)[0]
     ml_prob = model.predict_proba(latest)[0][ml_signal] * 100
 
-    # --- FINAL PRO LOGIC (MTF + Correlation) ---
     direction = "WAIT"
     confidence = 0
     reason = "Market condition not clear."
 
-    # Logic: Jo AI Buy bole, H1 trend Up hoy, ane Dollar Down hoy to j Buy
     if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
         direction = "BUY"
         confidence = ml_prob
         reason = "AI Bullish + 1H Trend Up + Dollar Weak"
-    # Logic: Jo AI Sell bole, H1 trend Down hoy, ane Dollar Up hoy to j Sell
     elif ml_signal == 0 and h1_trend == "DOWN" and dxy_trend == "UP":
         direction = "SELL"
         confidence = ml_prob
@@ -118,6 +106,7 @@ def get_pro_signal():
         confidence = 0
         reason = f"No Alignment (AI: {'BUY' if ml_signal==1 else 'SELL'}, 1H: {h1_trend}, DXY: {dxy_trend})"
 
+    # Live price levva mate current price j use karishu
     entry = round(float(latest['Close'].iloc[0]), 2)
     
     if direction == "BUY":
@@ -153,9 +142,30 @@ def get_news():
         return []
 
 # --- APP UI ---
-with st.spinner('Pro AI Analysis (MTF + DXY)...'):
+with st.spinner('Live Data Analysis...'):
     direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend = get_pro_signal()
     news_articles = get_news()
+
+# LIVE PRICE WIDGET (TradingView nu)
+live_chart_html = """
+<div class="tradingview-widget-container" style="height:200px;width:100%">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js" async>
+  {
+  "symbol": "OANDA:XAUUSD",
+  "width": "100%",
+  "height": "100%",
+  "locale": "en",
+  "dateRange": "1D",
+  "colorTheme": "dark",
+  "isTransparent": false,
+  "autosize": true,
+  "largeChartUrl": ""
+}
+  </script>
+</div>
+"""
+components.html(live_chart_html, height=200)
 
 # Main Signal Card
 if direction == "NO DATA":
@@ -166,12 +176,7 @@ else:
     card_html = f"""
     <div style="background-color: #1F2937; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #374151; font-family: sans-serif;">
         <div style="display: flex; justify-content: space-between;">
-            <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Pro Signal (M15 + H1 + DXY)</span>
-        </div>
-        
-        <div style="margin-top: 15px; text-align: center;">
-            <span style="color: #9CA3AF; font-size: 14px;">Current Price</span><br>
-            <span style="color: #FFD700; font-size: 28px; font-weight: bold;">${entry}</span>
+            <span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live AI Signal</span>
         </div>
         
         <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
@@ -207,7 +212,7 @@ else:
         </div>
     </div>
     """
-    components.html(card_html, height=360)
+    components.html(card_html, height=320)
 
 # News Card
 st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Live Market News</div><br>', unsafe_allow_html=True)
@@ -217,3 +222,9 @@ if news_articles:
 else:
     st.write("News nathi mali.")
 st.markdown('</div>', unsafe_allow_html=True)
+
+# Auto Refresh Logic
+st.markdown('<div class="subtitle" style="text-align:center; margin-top: 20px;">*Data updates every 60 seconds. Click button to refresh manually.*</div>', unsafe_allow_html=True)
+if st.button("🔄 Refresh Now"):
+    st.cache_data.clear()
+    st.rerun()
