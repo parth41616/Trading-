@@ -55,9 +55,13 @@ st.markdown(f"""
 # --- AI LOGIC (15-Min Timeframe) ---
 @st.cache_data(ttl=300) 
 def get_intraday_signal():
-    ticker = "XAUUSD=X" 
+    # FIX: XAUUSD=X ni jagya e GC=F use karyu chhe jethi intraday data 100% aavshe
+    ticker = "GC=F" 
     data = yf.download(ticker, period="60d", interval="15m")
     
+    if data.empty:
+        return "NO DATA", 0, 0, 0, 0, 0
+
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
     
@@ -77,6 +81,10 @@ def get_intraday_signal():
     X = data[['Open', 'High', 'Low', 'Close', 'SMA_20', 'SMA_50', 'RSI']]
     Y = data['Target']
     
+    # Check kariye ke data ma ketla rows chhe
+    if len(X) < 50:
+        return "NOT ENOUGH DATA", 0, 0, 0, 0, 0
+
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
     model.fit(X_train, Y_train)
@@ -126,47 +134,51 @@ with st.spinner('AI Intraday Analysis kari rahyu chhe...'):
     direction, confidence, entry, sl, tp1, tp2 = get_intraday_signal()
     news_articles = get_news()
 
-# Main Signal Card
-card_html = f"""
-<div style="background-color: #1F2937; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #374151; font-family: sans-serif;">
-    <div style="display: flex; justify-content: space-between;">
-        <span style="font-size: 18px; font-weight: bold; color: white;">⚡ M15 Intraday Signal</span>
-    </div>
-    
-    <div style="margin-top: 15px; text-align: center;">
-        <span style="color: #9CA3AF; font-size: 14px;">Suggested Entry Price</span><br>
-        <span style="color: #FFD700; font-size: 28px; font-weight: bold;">${entry}</span>
-    </div>
-    
-    <div style="margin-top: 10px;">
-        <span style="color: #9CA3AF; font-size: 14px;">AI Confidence: <span style="color: #FFD700;">{confidence:.1f}%</span></span>
-        <div style="background-color: #374151; border-radius: 5px; height: 8px; margin-top: 5px;">
-            <div style="background-color: #FFD700; width: {confidence}%; height: 8px; border-radius: 5px;"></div>
+# Jo data na male to error na batavvu
+if direction in ["NO DATA", "NOT ENOUGH DATA"]:
+    st.error("Market data currently unavailable. Please try again in a few minutes.")
+else:
+    # Main Signal Card
+    card_html = f"""
+    <div style="background-color: #1F2937; padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #374151; font-family: sans-serif;">
+        <div style="display: flex; justify-content: space-between;">
+            <span style="font-size: 18px; font-weight: bold; color: white;">⚡ M15 Intraday Signal (GC=F)</span>
+        </div>
+        
+        <div style="margin-top: 15px; text-align: center;">
+            <span style="color: #9CA3AF; font-size: 14px;">Suggested Entry Price</span><br>
+            <span style="color: #FFD700; font-size: 28px; font-weight: bold;">${entry}</span>
+        </div>
+        
+        <div style="margin-top: 10px;">
+            <span style="color: #9CA3AF; font-size: 14px;">AI Confidence: <span style="color: #FFD700;">{confidence:.1f}%</span></span>
+            <div style="background-color: #374151; border-radius: 5px; height: 8px; margin-top: 5px;">
+                <div style="background-color: #FFD700; width: {confidence}%; height: 8px; border-radius: 5px;"></div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
+            <span style="color: #9CA3AF; font-size: 14px;">AI Direction</span><br>
+            <span style="color: {'#10B981' if direction == 'BUY' else '#EF4444'}; font-size: 22px; font-weight: bold;">{direction}</span>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; gap: 10px;">
+            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
+                <div style="color: #9CA3AF; font-size: 12px;">SL</div>
+                <div style="color: #EF4444; font-size: 16px; font-weight: bold;">{sl}</div>
+            </div>
+            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
+                <div style="color: #9CA3AF; font-size: 12px;">TP 1</div>
+                <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp1}</div>
+            </div>
+            <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
+                <div style="color: #9CA3AF; font-size: 12px;">TP 2</div>
+                <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp2}</div>
+            </div>
         </div>
     </div>
-    
-    <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
-        <span style="color: #9CA3AF; font-size: 14px;">AI Direction</span><br>
-        <span style="color: {'#10B981' if direction == 'BUY' else '#EF4444'}; font-size: 22px; font-weight: bold;">{direction}</span>
-    </div>
-    
-    <div style="display: flex; justify-content: space-between; gap: 10px;">
-        <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
-            <div style="color: #9CA3AF; font-size: 12px;">SL</div>
-            <div style="color: #EF4444; font-size: 16px; font-weight: bold;">{sl}</div>
-        </div>
-        <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
-            <div style="color: #9CA3AF; font-size: 12px;">TP 1</div>
-            <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp1}</div>
-        </div>
-        <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; flex: 1;">
-            <div style="color: #9CA3AF; font-size: 12px;">TP 2</div>
-            <div style="color: #10B981; font-size: 16px; font-weight: bold;">{tp2}</div>
-        </div>
-    </div>
-</div>
-"""
-components.html(card_html, height=320)
+    """
+    components.html(card_html, height=320)
 
 # News Card
 st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Live Market News</div><br>', unsafe_allow_html=True)
