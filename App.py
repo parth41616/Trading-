@@ -10,7 +10,7 @@ import pytz
 from streamlit_autorefresh import st_autorefresh
 import requests
 
-# --- AUTO REFRESH (5 Minutes = 300 seconds) ---
+# --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
 # --- TWELVE DATA API KEY ---
@@ -63,7 +63,7 @@ sessions_html = get_market_sessions()
 st.markdown(f'<div class="timing-box"><div style="color: #FFD700; font-weight: bold; margin-bottom: 10px;">🌍 Global Forex Sessions (Live)</div>{sessions_html}</div>', unsafe_allow_html=True)
 
 # --- DATA FETCH FUNCTION ---
-@st.cache_data(ttl=300) # 5 minute cache
+@st.cache_data(ttl=300) 
 def fetch_twelvedata(symbol, interval, outputsize):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
@@ -406,4 +406,5 @@ def get_news():
                     "url": art['url'], 
                     "sentiment": sentiment, 
                     "color": color
-    
+                })
+            if 
