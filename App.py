@@ -409,4 +409,4 @@ def get_news():
                     color = "#EF4444"
                 
                 filtered.append({
-                    "tit
+                    "tit)}
