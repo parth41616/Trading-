@@ -9,6 +9,7 @@ from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
 import requests
+import yfinance as yf
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
@@ -53,18 +54,29 @@ st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍
 # --- DATA FETCH ---
 @st.cache_data(ttl=300) 
 def fetch_data(symbol, interval, outputsize):
+    # Try Twelve Data First
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=10)
         data = response.json()
-        if data.get("status") == "error" or "values" not in data:
-            return pd.DataFrame()
-        df = pd.DataFrame(data["values"])
-        df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        df.set_index('datetime', inplace=True)
-        df.sort_index(inplace=True)
-        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if data.get("status") != "error" and "values" in data:
+            df = pd.DataFrame(data["values"])
+            df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            df.set_index('datetime', inplace=True)
+            df.sort_index(inplace=True)
+            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            return df
+    except:
+        pass
+        
+    # Fallback to Yahoo Finance
+    try:
+        yf_interval = "15m" if interval == "15min" else "1h"
+        df = yf.download("GC=F", period="60d", interval=yf_interval, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
         return df
     except:
         return pd.DataFrame()
@@ -92,14 +104,16 @@ def get_pro_signal(force=False):
         if len(gold_data) < 50: 
             return "WAIT", 0, 0, 0, 0, "Not enough data"
 
-        # Main AI Logic
         gold_data['Target'] = np.where(gold_data['Close'].shift(-1) > gold_data['Close'], 1, 0)
         gold_data.dropna(inplace=True)
+        
         X = gold_data[['Open', 'High', 'Low', 'Close', 'SMA_20', 'SMA_50', 'RSI']]
         Y = gold_data['Target']
+        
         X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
         model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
         model.fit(X_train, Y_train)
+        
         latest = X.tail(1)
         ml_signal = model.predict(latest)[0]
         ml_prob = model.predict_proba(latest)[0][ml_signal] * 100
@@ -108,7 +122,6 @@ def get_pro_signal(force=False):
         confidence = 0
         reason = "Market condition not clear."
 
-        # Check 1H and DXY only if Force is False
         if not force:
             if not gold_1h.empty and not dxy.empty:
                 gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
@@ -117,18 +130,17 @@ def get_pro_signal(force=False):
                 dxy_trend = "UP" if dxy['Close'].iloc[-1] > dxy['SMA_20'].iloc[-1] else "DOWN"
 
                 if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
-                    direction, confidence, reason = "BUY", ml_prob, "Safe Mode: AI + 1H + DXY Aligned"
+                    direction, confidence, reason = "BUY", ml_prob, "Safe Mode: AI + 1H + DXY"
                 elif ml_signal == 0 and h1_trend == "DOWN" and dxy_trend == "UP":
-                    direction, confidence, reason = "SELL", ml_prob, "Safe Mode: AI + 1H + DXY Aligned"
+                    direction, confidence, reason = "SELL", ml_prob, "Safe Mode: AI + 1H + DXY"
                 else:
                     reason = f"WAIT (No Match: AI {'BUY' if ml_signal==1 else 'SELL'})"
             else:
                 reason = "Data Error (DXY/1H missing)"
         else:
-            # Force Mode (Ignore 1H and DXY)
             direction = "BUY" if ml_signal == 1 else "SELL"
             confidence = ml_prob
-            reason = "FORCE MODE: Based on AI Chart only"
+            reason = "FORCE MODE: AI Chart Only"
 
         entry = round(float(latest['Close'].iloc[0]), 2)
         if direction == "BUY":
@@ -144,7 +156,6 @@ def get_pro_signal(force=False):
         return "WAIT", 0, 0, 0, 0, "System Error"
 
 # --- APP UI ---
-# Button for Force Signal
 st.markdown("### ⚡ Trade Control")
 force_mode = st.checkbox("🔥 Force Signal (Ignore 1H & DXY Filters)")
 
