@@ -1,7 +1,7 @@
 streamlit
-streamlit-autorefresh
+yfinance
 pandas
 numpy
 scikit-learn
-requests
-pytz
+newsapi-python
+streamlit-autorefresh
