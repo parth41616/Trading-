@@ -17,7 +17,6 @@ TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
 
 st.set_page_config(page_title="Gold AI", page_icon="🪙", layout="centered")
-
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -28,27 +27,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold AI (Pro)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Live Signals & Analysis</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Safe & Force Signals</div>', unsafe_allow_html=True)
 
 # --- 1. MARKET SESSIONS ---
 def get_market_sessions():
     now_utc = datetime.now(pytz.utc)
     utc_time = now_utc.time()
-    
     sessions = {
         "🇦🇺 Sydney": (time(21, 0), time(6, 0)),
         "🇯🇵 Tokyo": (time(0, 0), time(9, 0)),
         "🇬🇧 London": (time(7, 0), time(16, 0)),
         "🇺🇸 New York": (time(12, 0), time(21, 0))
     }
-    
     result = []
     for name, (start, end) in sessions.items():
-        if start < end: 
-            is_open = start <= utc_time <= end
-        else: 
-            is_open = utc_time >= start or utc_time <= end
-            
+        is_open = start <= utc_time <= end if start < end else utc_time >= start or utc_time <= end
         color = "#10B981" if is_open else "#EF4444"
         status = "OPEN 🟢" if is_open else "CLOSED 🔴"
         result.append(f'<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
@@ -59,7 +52,7 @@ st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍
 
 # --- DATA FETCH ---
 @st.cache_data(ttl=300) 
-def fetch_twelvedata(symbol, interval, outputsize):
+def fetch_data(symbol, interval, outputsize):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
         response = requests.get(url, timeout=15)
@@ -76,20 +69,19 @@ def fetch_twelvedata(symbol, interval, outputsize):
     except:
         return pd.DataFrame()
 
-# --- AI SIGNAL ---
+# --- AI SIGNAL & FORCE LOGIC ---
 @st.cache_data(ttl=300) 
-def get_pro_signal():
+def get_pro_signal(force=False):
     try:
-        gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
-        gold_1h = fetch_twelvedata("XAU/USD", "1h", 200)
-        dxy = fetch_twelvedata("DXY", "15min", 500)
+        gold_data = fetch_data("XAU/USD", "15min", 500)
+        gold_1h = fetch_data("XAU/USD", "1h", 200)
+        dxy = fetch_data("DXY", "15min", 500)
 
-        if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data Error / Market Closed"
+        if gold_data.empty:
+            return "WAIT", 0, 0, 0, 0, "Data Error / Market Closed"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
-        
         delta = gold_data['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -98,24 +90,16 @@ def get_pro_signal():
         gold_data.dropna(inplace=True)
 
         if len(gold_data) < 50: 
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Not enough data"
+            return "WAIT", 0, 0, 0, 0, "Not enough data"
 
-        gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
-        h1_trend = "UP" if gold_1h['Close'].iloc[-1] > gold_1h['SMA_50'].iloc[-1] else "DOWN"
-
-        dxy['SMA_20'] = dxy['Close'].rolling(window=20).mean()
-        dxy_trend = "UP" if dxy['Close'].iloc[-1] > dxy['SMA_20'].iloc[-1] else "DOWN"
-
+        # Main AI Logic
         gold_data['Target'] = np.where(gold_data['Close'].shift(-1) > gold_data['Close'], 1, 0)
         gold_data.dropna(inplace=True)
-        
         X = gold_data[['Open', 'High', 'Low', 'Close', 'SMA_20', 'SMA_50', 'RSI']]
         Y = gold_data['Target']
-        
         X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
         model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
         model.fit(X_train, Y_train)
-        
         latest = X.tail(1)
         ml_signal = model.predict(latest)[0]
         ml_prob = model.predict_proba(latest)[0][ml_signal] * 100
@@ -124,37 +108,48 @@ def get_pro_signal():
         confidence = 0
         reason = "Market condition not clear."
 
-        if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
-            direction = "BUY"
-            confidence = ml_prob
-            reason = "AI Bullish + 1H Trend Up + Dollar Weak"
-        elif ml_signal == 0 and h1_trend == "DOWN" and dxy_trend == "UP":
-            direction = "SELL"
-            confidence = ml_prob
-            reason = "AI Bearish + 1H Trend Down + Dollar Strong"
+        # Check 1H and DXY only if Force is False
+        if not force:
+            if not gold_1h.empty and not dxy.empty:
+                gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
+                h1_trend = "UP" if gold_1h['Close'].iloc[-1] > gold_1h['SMA_50'].iloc[-1] else "DOWN"
+                dxy['SMA_20'] = dxy['Close'].rolling(window=20).mean()
+                dxy_trend = "UP" if dxy['Close'].iloc[-1] > dxy['SMA_20'].iloc[-1] else "DOWN"
+
+                if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
+                    direction, confidence, reason = "BUY", ml_prob, "Safe Mode: AI + 1H + DXY Aligned"
+                elif ml_signal == 0 and h1_trend == "DOWN" and dxy_trend == "UP":
+                    direction, confidence, reason = "SELL", ml_prob, "Safe Mode: AI + 1H + DXY Aligned"
+                else:
+                    reason = f"WAIT (No Match: AI {'BUY' if ml_signal==1 else 'SELL'})"
+            else:
+                reason = "Data Error (DXY/1H missing)"
         else:
-            reason = f"No Alignment (AI: {'BUY' if ml_signal==1 else 'SELL'}, 1H: {h1_trend}, DXY: {dxy_trend})"
+            # Force Mode (Ignore 1H and DXY)
+            direction = "BUY" if ml_signal == 1 else "SELL"
+            confidence = ml_prob
+            reason = "FORCE MODE: Based on AI Chart only"
 
         entry = round(float(latest['Close'].iloc[0]), 2)
-        
         if direction == "BUY":
-            sl = round(entry - 3.0, 2)
-            tp1 = round(entry + 4.0, 2)
-            tp2 = round(entry + 6.0, 2)
+            sl, tp1, tp2 = round(entry - 3.0, 2), round(entry + 4.0, 2), round(entry + 6.0, 2)
         elif direction == "SELL":
-            sl = round(entry + 3.0, 2)
-            tp1 = round(entry - 4.0, 2)
-            tp2 = round(entry - 6.0, 2)
+            sl, tp1, tp2 = round(entry + 3.0, 2), round(entry - 4.0, 2), round(entry - 6.0, 2)
         else:
             sl, tp1, tp2 = 0, 0, 0
 
-        return direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason
-    except Exception:
-        return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "System Error"
+        return direction, confidence, entry, sl, tp1, tp2, reason
 
-# --- FETCH DATA ---
+    except Exception as e:
+        return "WAIT", 0, 0, 0, 0, "System Error"
+
+# --- APP UI ---
+# Button for Force Signal
+st.markdown("### ⚡ Trade Control")
+force_mode = st.checkbox("🔥 Force Signal (Ignore 1H & DXY Filters)")
+
 with st.spinner('Analysis...'):
-    direction, confidence, entry, sl, tp1, tp2, h1_trend, dxy_trend, reason = get_pro_signal()
+    direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
 
 # --- LIVE CHART ---
 live_chart_html = """
@@ -177,16 +172,6 @@ st.markdown(f"""
         <span style="color: #9CA3AF; font-size: 14px;">Direction</span><br>
         <span style="color: {color}; font-size: 26px; font-weight: bold;">{direction}</span>
         <div style="color: #9CA3AF; font-size: 12px; margin-top: 5px;">{reason}</div>
-    </div>
-    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
-        <div style="background-color: #111827; padding: 8px; border-radius: 8px; text-align: center; flex: 1;">
-            <div style="color: #9CA3AF; font-size: 12px;">1H Trend</div>
-            <div style="color: {'#10B981' if h1_trend == 'UP' else '#EF4444'}; font-size: 14px; font-weight: bold;">{h1_trend}</div>
-        </div>
-        <div style="background-color: #111827; padding: 8px; border-radius: 8px; text-align: center; flex: 1;">
-            <div style="color: #9CA3AF; font-size: 12px;">Dollar</div>
-            <div style="color: {'#10B981' if dxy_trend == 'UP' else '#EF4444'}; font-size: 14px; font-weight: bold;">{dxy_trend}</div>
-        </div>
     </div>
     <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
         <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
@@ -223,13 +208,7 @@ def get_news():
                 elif any(w in title.lower() for w in ['fall', 'drop', 'low', 'loss']): 
                     sentiment = "Bearish 📉"
                     color = "#EF4444"
-                
-                filtered.append({
-                    "title": title, 
-                    "url": art['url'], 
-                    "sentiment": sentiment, 
-                    "color": color
-                })
+                filtered.append({"title": title, "url": art['url'], "sentiment": sentiment, "color": color})
             if len(filtered) >= 3: 
                 break
         return filtered
