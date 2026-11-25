@@ -35,6 +35,33 @@ st.markdown("""
 st.markdown('<div class="title">🪙 Gold AI (Ultimate Pro)</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">All-in-One Trading Assistant</div>', unsafe_allow_html=True)
 
+# --- 1. MARKET SESSIONS (Live Global Time) ---
+def get_market_sessions():
+    now_utc = datetime.now(pytz.utc)
+    utc_time = now_utc.time()
+    
+    sessions = {
+        "🇦🇺 Sydney": (time(21, 0), time(6, 0)),
+        "🇯🇵 Tokyo": (time(0, 0), time(9, 0)),
+        "🇬🇧 London": (time(7, 0), time(16, 0)),
+        "🇺🇸 New York": (time(12, 0), time(21, 0))
+    }
+    
+    result = []
+    for name, (start, end) in sessions.items():
+        if start < end: 
+            is_open = start <= utc_time <= end
+        else: 
+            is_open = utc_time >= start or utc_time <= end
+            
+        color = "#10B981" if is_open else "#EF4444"
+        status = "OPEN 🟢" if is_open else "CLOSED 🔴"
+        result.append(f'<div class="session-row"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
+    return "".join(result)
+
+sessions_html = get_market_sessions()
+st.markdown(f'<div class="timing-box"><div style="color: #FFD700; font-weight: bold; margin-bottom: 10px;">🌍 Global Forex Sessions (Live)</div>{sessions_html}</div>', unsafe_allow_html=True)
+
 # --- DATA FETCH FUNCTION ---
 @st.cache_data(ttl=60)
 def fetch_twelvedata(symbol, interval, outputsize):
@@ -54,34 +81,6 @@ def fetch_twelvedata(symbol, interval, outputsize):
     except:
         return pd.DataFrame()
 
-# --- 1. MARKET SESSIONS ---
-def get_market_sessions():
-    now_utc = datetime.now(pytz.utc)
-    sydney_time = now_utc.astimezone(pytz.timezone('Australia/Sydney')).time()
-    tokyo_time = now_utc.astimezone(pytz.timezone('Asia/Tokyo')).time()
-    london_time = now_utc.astimezone(pytz.timezone('Europe/London')).time()
-    ny_time = now_utc.astimezone(pytz.timezone('America/New_York')).time()
-
-    sessions = {
-        "🇦🇺 Sydney": (time(22, 0), time(7, 0), sydney_time),
-        "🇯🇵 Tokyo": (time(0, 0), time(9, 0), tokyo_time),
-        "🇬🇧 London": (time(8, 0), time(17, 0), london_time),
-        "🇺🇸 New York": (time(8, 0), time(17, 0), ny_time)
-    }
-    result = []
-    for name, (start, end, local_time) in sessions.items():
-        if start < end: 
-            is_open = start <= local_time <= end
-        else: 
-            is_open = local_time >= start or local_time <= end
-        color = "#10B981" if is_open else "#EF4444"
-        status = "OPEN 🟢" if is_open else "CLOSED 🔴"
-        result.append(f'<div class="session-row"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
-    return "".join(result)
-
-sessions_html = get_market_sessions()
-st.markdown(f'<div class="timing-box"><div style="color: #FFD700; font-weight: bold; margin-bottom: 10px;">🌍 Global Forex Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
-
 # --- AI MAIN SIGNAL ---
 @st.cache_data(ttl=60) 
 def get_pro_signal():
@@ -91,7 +90,7 @@ def get_pro_signal():
         dxy = fetch_twelvedata("DXY", "15min", 500)
 
         if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data Error"
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "API Limit Reached / Market Closed"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -408,16 +407,4 @@ def get_news():
                     "sentiment": sentiment, 
                     "color": color
                 })
-            if len(filtered) >= 3: 
-                break
-        return filtered
-    except: 
-        return []
-
-st.markdown('<div class="card"><div class="title" style="font-size: 18px;">📰 Market News & Sentiment</div><br>', unsafe_allow_html=True)
-news_articles = get_news()
-if news_articles:
-    for article in news_articles:
-        st.markdown(f"🔹 **[{article['title']}]({article['url']})**")
-        st.markdown(f"<span style='color:{article['color']}; font-size:12px; font-weight:bold;'>{article['sentiment']}</span><br>", unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+            if len(filt
