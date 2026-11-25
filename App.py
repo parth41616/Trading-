@@ -38,6 +38,13 @@ st.markdown('<div class="subtitle">All-in-One Trading Assistant</div>', unsafe_a
 # --- 1. MARKET SESSIONS (Live Global Time) ---
 def get_market_sessions():
     now_utc = datetime.now(pytz.utc)
+    
+    # Standard Forex Session Timings (UTC)
+    # Sydney: 21:00 - 06:00 UTC
+    # Tokyo: 00:00 - 09:00 UTC
+    # London: 07:00 - 16:00 UTC
+    # New York: 12:00 - 21:00 UTC
+    
     utc_time = now_utc.time()
     
     sessions = {
@@ -90,7 +97,7 @@ def get_pro_signal():
         dxy = fetch_twelvedata("DXY", "15min", 500)
 
         if gold_data.empty or gold_1h.empty or dxy.empty:
-            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "API Limit Reached / Market Closed"
+            return "WAIT", 0, 0, 0, 0, 0, "N/A", "N/A", "Data Limit / Market Closed"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -402,9 +409,4 @@ def get_news():
                     color = "#EF4444"
                 
                 filtered.append({
-                    "title": title, 
-                    "url": art['url'], 
-                    "sentiment": sentiment, 
-                    "color": color
-                })
-            if len(filt
+                    "tit
