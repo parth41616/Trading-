@@ -68,7 +68,7 @@ def fetch_twelvedata(symbol, interval, outputsize):
         pass
     return pd.DataFrame()
 
-# --- AI SIGNAL (Twelve Data Only + Safe) ---
+# --- AI SIGNAL (Safe) ---
 def get_pro_signal(force=False):
     try:
         gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
@@ -129,7 +129,6 @@ def get_pro_signal(force=False):
             confidence = ml_prob
             reason = "FORCE MODE: AI Chart Only"
 
-        # Live Entry Price (Current Price thi)
         entry = round(float(latest['Close'].iloc[0]), 2)
 
         if direction == "BUY":
@@ -146,8 +145,7 @@ def get_pro_signal(force=False):
         return direction, confidence, entry, sl, tp1, tp2, reason
 
     except Exception as e:
-        # Aa line khub mahatvni chhe, aa error ne pakadse ane app crash nahi thavade
-        return "WAIT", 0, 0, 0, 0, "System Error (Please Refresh)"
+        return "WAIT", 0, 0, 0, 0, "System Error"
 
 # --- APP UI ---
 st.markdown("### ⚡ Trade Control")
@@ -158,10 +156,7 @@ if st.button("🔄 Refresh Now"):
     st.rerun()
 
 with st.spinner('Analysis...'):
-    try:
-        direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
-    except:
-        direction, confidence, entry, sl, tp1, tp2, reason = "WAIT", 0, 0, 0, 0, "Data Error"
+    direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
 
 # --- LIVE CHART ---
 live_chart_html = """
