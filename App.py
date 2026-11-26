@@ -28,7 +28,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold AI (Pro)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Safe & Force Signals</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Live Signals & Analysis</div>', unsafe_allow_html=True)
 
 # --- 1. MARKET SESSIONS ---
 def get_market_sessions():
@@ -51,10 +51,8 @@ def get_market_sessions():
 sessions_html = get_market_sessions()
 st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍 Market Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
 
-# --- DATA FETCH ---
-@st.cache_data(ttl=300) 
-def fetch_data(symbol, interval, outputsize):
-    # Try Twelve Data First
+# --- DATA FETCH (No Cache for Live Price) ---
+def fetch_twelvedata(symbol, interval, outputsize):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
         response = requests.get(url, timeout=10)
@@ -69,29 +67,26 @@ def fetch_data(symbol, interval, outputsize):
             return df
     except:
         pass
-        
-    # Fallback to Yahoo Finance
-    try:
-        yf_interval = "15m" if interval == "15min" else "1h"
-        df = yf.download("GC=F", period="60d", interval=yf_interval, progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
-        return df
-    except:
-        return pd.DataFrame()
+    return pd.DataFrame()
 
-# --- AI SIGNAL & FORCE LOGIC ---
-@st.cache_data(ttl=300) 
+# --- AI SIGNAL (Live Price Sathe) ---
 def get_pro_signal(force=False):
     try:
-        gold_data = fetch_data("XAU/USD", "15min", 500)
-        gold_1h = fetch_data("XAU/USD", "1h", 200)
-        dxy = fetch_data("DXY", "15min", 500)
+        gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
+        
+        # Jo Twelve Data fail thay to Yahoo thi GC=F lavvu (Live Price mate)
+        df_live = yf.download("GC=F", period="1d", interval="1m", progress=False)
+        if not df_live.empty:
+            if isinstance(df_live.columns, pd.MultiIndex):
+                df_live.columns = df_live.columns.get_level_values(0)
+            live_price = float(df_live['Close'].iloc[-1])
+        else:
+            live_price = 0
 
         if gold_data.empty:
-            return "WAIT", 0, 0, 0, 0, "Data Error / Market Closed"
+            return "WAIT", 0, 0, 0, 0, "Data Error / Market Closed", live_price
 
+        # 1. AI LOGIC
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
         delta = gold_data['Close'].diff()
@@ -102,7 +97,7 @@ def get_pro_signal(force=False):
         gold_data.dropna(inplace=True)
 
         if len(gold_data) < 50: 
-            return "WAIT", 0, 0, 0, 0, "Not enough data"
+            return "WAIT", 0, 0, 0, 0, "Not enough data", live_price
 
         gold_data['Target'] = np.where(gold_data['Close'].shift(-1) > gold_data['Close'], 1, 0)
         gold_data.dropna(inplace=True)
@@ -123,6 +118,9 @@ def get_pro_signal(force=False):
         reason = "Market condition not clear."
 
         if not force:
+            gold_1h = fetch_twelvedata("XAU/USD", "1h", 200)
+            dxy = fetch_twelvedata("DXY", "15min", 500)
+            
             if not gold_1h.empty and not dxy.empty:
                 gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
                 h1_trend = "UP" if gold_1h['Close'].iloc[-1] > gold_1h['SMA_50'].iloc[-1] else "DOWN"
@@ -130,9 +128,9 @@ def get_pro_signal(force=False):
                 dxy_trend = "UP" if dxy['Close'].iloc[-1] > dxy['SMA_20'].iloc[-1] else "DOWN"
 
                 if ml_signal == 1 and h1_trend == "UP" and dxy_trend == "DOWN":
-                    direction, confidence, reason = "BUY", ml_prob, "Safe Mode: AI + 1H + DXY"
+                    direction, confidence, reason = "BUY", ml_prob, "Safe Mode: Aligned"
                 elif ml_signal == 0 and h1_trend == "DOWN" and dxy_trend == "UP":
-                    direction, confidence, reason = "SELL", ml_prob, "Safe Mode: AI + 1H + DXY"
+                    direction, confidence, reason = "SELL", ml_prob, "Safe Mode: Aligned"
                 else:
                     reason = f"WAIT (No Match: AI {'BUY' if ml_signal==1 else 'SELL'})"
             else:
@@ -142,25 +140,36 @@ def get_pro_signal(force=False):
             confidence = ml_prob
             reason = "FORCE MODE: AI Chart Only"
 
-        entry = round(float(latest['Close'].iloc[0]), 2)
+        # LIVE PRICE USE KARVU
+        entry = round(live_price, 2) if live_price != 0 else round(float(latest['Close'].iloc[0]), 2)
+
         if direction == "BUY":
-            sl, tp1, tp2 = round(entry - 3.0, 2), round(entry + 4.0, 2), round(entry + 6.0, 2)
+            sl = round(entry - 5.0, 2)
+            tp1 = round(entry + 7.0, 2)
+            tp2 = round(entry + 10.0, 2)
         elif direction == "SELL":
-            sl, tp1, tp2 = round(entry + 3.0, 2), round(entry - 4.0, 2), round(entry - 6.0, 2)
+            sl = round(entry + 5.0, 2)
+            tp1 = round(entry - 7.0, 2)
+            tp2 = round(entry - 10.0, 2)
         else:
             sl, tp1, tp2 = 0, 0, 0
 
-        return direction, confidence, entry, sl, tp1, tp2, reason
+        return direction, confidence, entry, sl, tp1, tp2, reason, live_price
 
     except Exception as e:
-        return "WAIT", 0, 0, 0, 0, "System Error"
+        return "WAIT", 0, 0, 0, 0, "System Error", 0
 
 # --- APP UI ---
 st.markdown("### ⚡ Trade Control")
 force_mode = st.checkbox("🔥 Force Signal (Ignore 1H & DXY Filters)")
 
+# Aa button dabavvathi cache clear thashe ane nava digits aavshe
+if st.button("🔄 Refresh Now"):
+    st.cache_data.clear()
+    st.rerun()
+
 with st.spinner('Analysis...'):
-    direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
+    direction, confidence, entry, sl, tp1, tp2, reason, live_price = get_pro_signal(force=force_mode)
 
 # --- LIVE CHART ---
 live_chart_html = """
@@ -185,6 +194,10 @@ st.markdown(f"""
         <div style="color: #9CA3AF; font-size: 12px; margin-top: 5px;">{reason}</div>
     </div>
     <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
+        <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
+            <div style="color: #9CA3AF; font-size: 12px;">ENTRY</div>
+            <div style="color: #FFD700; font-size: 16px; font-weight: bold;">{entry if entry != 0 else '--'}</div>
+        </div>
         <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
             <div style="color: #9CA3AF; font-size: 12px;">SL</div>
             <div style="color: #EF4444; font-size: 16px; font-weight: bold;">{sl if sl != 0 else '--'}</div>
