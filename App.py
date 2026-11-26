@@ -68,7 +68,7 @@ def fetch_twelvedata(symbol, interval, outputsize):
         pass
     return pd.DataFrame()
 
-# --- AI SIGNAL (Safe) ---
+# --- AI SIGNAL ---
 def get_pro_signal(force=False):
     try:
         gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
@@ -202,7 +202,6 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- NEWS ---
-@st.cache_data(ttl=3600)
 def get_news():
     try:
         newsapi = NewsApiClient(api_key=NEWS_API_KEY)
