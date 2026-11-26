@@ -9,7 +9,6 @@ from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
 import requests
-import yfinance as yf
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
@@ -69,24 +68,13 @@ def fetch_twelvedata(symbol, interval, outputsize):
         pass
     return pd.DataFrame()
 
-# --- AI SIGNAL (Safe) ---
+# --- AI SIGNAL (Twelve Data Only) ---
 def get_pro_signal(force=False):
     try:
         gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
         
-        # Live price try kariye, jo na aave to 0
-        live_price = 0
-        try:
-            df_live = yf.download("GC=F", period="1d", interval="1m", progress=False)
-            if not df_live.empty:
-                if isinstance(df_live.columns, pd.MultiIndex):
-                    df_live.columns = df_live.columns.get_level_values(0)
-                live_price = float(df_live['Close'].iloc[-1])
-        except:
-            live_price = 0
-
         if gold_data.empty:
-            return "WAIT", 0, 0, 0, 0, "Data Error / Market Closed", live_price
+            return "WAIT", 0, 0, 0, 0, "API Limit / Market Closed"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -98,7 +86,7 @@ def get_pro_signal(force=False):
         gold_data.dropna(inplace=True)
 
         if len(gold_data) < 50: 
-            return "WAIT", 0, 0, 0, 0, "Not enough data", live_price
+            return "WAIT", 0, 0, 0, 0, "Not enough data"
 
         gold_data['Target'] = np.where(gold_data['Close'].shift(-1) > gold_data['Close'], 1, 0)
         gold_data.dropna(inplace=True)
@@ -141,7 +129,8 @@ def get_pro_signal(force=False):
             confidence = ml_prob
             reason = "FORCE MODE: AI Chart Only"
 
-        entry = round(live_price, 2) if live_price != 0 else round(float(latest['Close'].iloc[0]), 2)
+        # Live Entry Price (Current Price thi)
+        entry = round(float(latest['Close'].iloc[0]), 2)
 
         if direction == "BUY":
             sl = round(entry - 5.0, 2)
@@ -154,11 +143,10 @@ def get_pro_signal(force=False):
         else:
             sl, tp1, tp2 = 0, 0, 0
 
-        return direction, confidence, entry, sl, tp1, tp2, reason, live_price
+        return direction, confidence, entry, sl, tp1, tp2, reason
 
     except Exception as e:
-        # Jo koi pan error aave to aakhu app crash na thay
-        return "WAIT", 0, 0, 0, 0, "System Error (Safe)", 0
+        return "WAIT", 0, 0, 0, 0, "System Error"
 
 # --- APP UI ---
 st.markdown("### ⚡ Trade Control")
@@ -169,7 +157,7 @@ if st.button("🔄 Refresh Now"):
     st.rerun()
 
 with st.spinner('Analysis...'):
-    direction, confidence, entry, sl, tp1, tp2, reason, live_price = get_pro_signal(force=force_mode)
+    direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
 
 # --- LIVE CHART ---
 live_chart_html = """
