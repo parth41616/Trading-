@@ -68,13 +68,13 @@ def fetch_twelvedata(symbol, interval, outputsize):
         pass
     return pd.DataFrame()
 
-# --- AI SIGNAL (Twelve Data Only) ---
+# --- AI SIGNAL (Twelve Data Only + Safe) ---
 def get_pro_signal(force=False):
     try:
         gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
         
         if gold_data.empty:
-            return "WAIT", 0, 0, 0, 0, "API Limit / Market Closed"
+            return "WAIT", 0, 0, 0, 0, "Data Limit Reached / Market Closed"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -146,7 +146,8 @@ def get_pro_signal(force=False):
         return direction, confidence, entry, sl, tp1, tp2, reason
 
     except Exception as e:
-        return "WAIT", 0, 0, 0, 0, "System Error"
+        # Aa line khub mahatvni chhe, aa error ne pakadse ane app crash nahi thavade
+        return "WAIT", 0, 0, 0, 0, "System Error (Please Refresh)"
 
 # --- APP UI ---
 st.markdown("### ⚡ Trade Control")
@@ -157,7 +158,10 @@ if st.button("🔄 Refresh Now"):
     st.rerun()
 
 with st.spinner('Analysis...'):
-    direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
+    try:
+        direction, confidence, entry, sl, tp1, tp2, reason = get_pro_signal(force=force_mode)
+    except:
+        direction, confidence, entry, sl, tp1, tp2, reason = "WAIT", 0, 0, 0, 0, "Data Error"
 
 # --- LIVE CHART ---
 live_chart_html = """
