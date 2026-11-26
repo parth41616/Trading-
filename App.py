@@ -51,7 +51,7 @@ def get_market_sessions():
 sessions_html = get_market_sessions()
 st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍 Market Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
 
-# --- DATA FETCH (No Cache for Live Price) ---
+# --- DATA FETCH ---
 def fetch_twelvedata(symbol, interval, outputsize):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
@@ -69,24 +69,25 @@ def fetch_twelvedata(symbol, interval, outputsize):
         pass
     return pd.DataFrame()
 
-# --- AI SIGNAL (Live Price Sathe) ---
+# --- AI SIGNAL (Safe) ---
 def get_pro_signal(force=False):
     try:
         gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
         
-        # Jo Twelve Data fail thay to Yahoo thi GC=F lavvu (Live Price mate)
-        df_live = yf.download("GC=F", period="1d", interval="1m", progress=False)
-        if not df_live.empty:
-            if isinstance(df_live.columns, pd.MultiIndex):
-                df_live.columns = df_live.columns.get_level_values(0)
-            live_price = float(df_live['Close'].iloc[-1])
-        else:
+        # Live price try kariye, jo na aave to 0
+        live_price = 0
+        try:
+            df_live = yf.download("GC=F", period="1d", interval="1m", progress=False)
+            if not df_live.empty:
+                if isinstance(df_live.columns, pd.MultiIndex):
+                    df_live.columns = df_live.columns.get_level_values(0)
+                live_price = float(df_live['Close'].iloc[-1])
+        except:
             live_price = 0
 
         if gold_data.empty:
             return "WAIT", 0, 0, 0, 0, "Data Error / Market Closed", live_price
 
-        # 1. AI LOGIC
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
         delta = gold_data['Close'].diff()
@@ -140,7 +141,6 @@ def get_pro_signal(force=False):
             confidence = ml_prob
             reason = "FORCE MODE: AI Chart Only"
 
-        # LIVE PRICE USE KARVU
         entry = round(live_price, 2) if live_price != 0 else round(float(latest['Close'].iloc[0]), 2)
 
         if direction == "BUY":
@@ -157,13 +157,13 @@ def get_pro_signal(force=False):
         return direction, confidence, entry, sl, tp1, tp2, reason, live_price
 
     except Exception as e:
-        return "WAIT", 0, 0, 0, 0, "System Error", 0
+        # Jo koi pan error aave to aakhu app crash na thay
+        return "WAIT", 0, 0, 0, 0, "System Error (Safe)", 0
 
 # --- APP UI ---
 st.markdown("### ⚡ Trade Control")
 force_mode = st.checkbox("🔥 Force Signal (Ignore 1H & DXY Filters)")
 
-# Aa button dabavvathi cache clear thashe ane nava digits aavshe
 if st.button("🔄 Refresh Now"):
     st.cache_data.clear()
     st.rerun()
