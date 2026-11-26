@@ -8,12 +8,11 @@ from newsapi import NewsApiClient
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
-import requests
+import yfinance as yf
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
-TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 NEWS_API_KEY = 'fd513a4322ea48e2b9be96cd2ad2e3c6'
 
 st.set_page_config(page_title="Gold AI", page_icon="🪙", layout="centered")
@@ -50,31 +49,27 @@ def get_market_sessions():
 sessions_html = get_market_sessions()
 st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍 Market Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
 
-# --- DATA FETCH ---
-def fetch_twelvedata(symbol, interval, outputsize):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
+# --- DATA FETCH (Only Yahoo Finance) ---
+def fetch_yahoo_data(symbol, interval):
     try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        if data.get("status") != "error" and "values" in data:
-            df = pd.DataFrame(data["values"])
-            df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
-            df['datetime'] = pd.to_datetime(df['datetime'])
-            df.set_index('datetime', inplace=True)
-            df.sort_index(inplace=True)
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-            return df
+        yf_interval = "15m" if interval == "15min" else "1h"
+        df = yf.download(symbol, period="60d", interval=yf_interval, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if df.empty:
+            return pd.DataFrame()
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return df
     except:
-        pass
-    return pd.DataFrame()
+        return pd.DataFrame()
 
 # --- AI SIGNAL ---
 def get_pro_signal(force=False):
     try:
-        gold_data = fetch_twelvedata("XAU/USD", "15min", 500)
+        gold_data = fetch_yahoo_data("GC=F", "15min")
         
         if gold_data.empty:
-            return "WAIT", 0, 0, 0, 0, "Data Limit Reached / Market Closed"
+            return "WAIT", 0, 0, 0, 0, "Data Error"
 
         gold_data['SMA_20'] = gold_data['Close'].rolling(window=20).mean()
         gold_data['SMA_50'] = gold_data['Close'].rolling(window=50).mean()
@@ -107,8 +102,8 @@ def get_pro_signal(force=False):
         reason = "Market condition not clear."
 
         if not force:
-            gold_1h = fetch_twelvedata("XAU/USD", "1h", 200)
-            dxy = fetch_twelvedata("DXY", "15min", 500)
+            gold_1h = fetch_yahoo_data("GC=F", "1h")
+            dxy = fetch_yahoo_data("DX-Y.NYB", "15min")
             
             if not gold_1h.empty and not dxy.empty:
                 gold_1h['SMA_50'] = gold_1h['Close'].rolling(window=50).mean()
