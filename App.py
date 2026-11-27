@@ -5,12 +5,10 @@ import numpy as np
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
-import requests
+import yfinance as yf
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
-
-TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 
 st.set_page_config(page_title="Gold AI (Spot Live)", page_icon="🪙", layout="centered")
 st.markdown("""
@@ -25,31 +23,15 @@ st.markdown("""
 st.markdown('<div class="title">🪙 Gold AI (Spot Live)</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Exact Spot Price with 15-Min Strategy</div>', unsafe_allow_html=True)
 
-# --- DATA FETCH (Twelve Data - Spot XAU/USD) ---
-def fetch_twelvedata(symbol, interval, outputsize):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
-    try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        if data.get("status") != "error" and "values" in data:
-            df = pd.DataFrame(data["values"])
-            df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
-            df['datetime'] = pd.to_datetime(df['datetime'])
-            df.set_index('datetime', inplace=True)
-            df.sort_index(inplace=True)
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-            return df
-    except:
-        pass
-    return pd.DataFrame()
-
-# --- SMART STRATEGY (Live Spot) ---
+# --- SMART STRATEGY (Yahoo Finance thi) ---
 def get_smart_signal():
     try:
-        df = fetch_twelvedata("XAU/USD", "15min", 500)
-        
+        # 15-minute no data Yahoo thi
+        df = yf.download("GC=F", period="60d", interval="15m", progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
         if df.empty or len(df) < 50:
-            # Jo data na aave to safe return
             return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
 
         df['SMA_50'] = df['Close'].rolling(window=50).mean()
@@ -60,7 +42,8 @@ def get_smart_signal():
         df['RSI'] = 100 - (100 / (1 + rs))
         df.dropna(inplace=True)
 
-        live_price = round(float(df['Close'].iloc[-1]), 3)
+        # Yahoo nu price GC=F (Futures) hovathi Spot karta thodu alag hase
+        live_price = round(float(df['Close'].iloc[-1]), 2)
         current_rsi = float(df['RSI'].iloc[-1])
         current_sma = float(df['SMA_50'].iloc[-1])
 
