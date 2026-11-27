@@ -2,17 +2,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
 import yfinance as yf
+import requests
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
-st.set_page_config(page_title="Gold AI (Smart Strategy)", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold AI (Smart)", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -22,35 +21,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🪙 Gold AI (Smart Strategy)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Backtested from 2 Years Data</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🪙 Gold AI (Live Data)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Smart Strategy with Exact Live Price</div>', unsafe_allow_html=True)
 
-# --- MARKET SESSIONS ---
-def get_market_sessions():
-    now_utc = datetime.now(pytz.utc)
-    utc_time = now_utc.time()
-    sessions = {
-        "🇦🇺 Sydney": (time(21, 0), time(6, 0)),
-        "🇯🇵 Tokyo": (time(0, 0), time(9, 0)),
-        "🇬🇧 London": (time(7, 0), time(16, 0)),
-        "🇺🇸 New York": (time(12, 0), time(21, 0))
-    }
-    result = []
-    for name, (start, end) in sessions.items():
-        is_open = start <= utc_time <= end if start < end else utc_time >= start or utc_time <= end
-        color = "#10B981" if is_open else "#EF4444"
-        status = "OPEN 🟢" if is_open else "CLOSED 🔴"
-        result.append(f'<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span>{name}</span><span style="color: {color}; font-weight: bold;">{status}</span></div>')
-    return "".join(result)
+# --- DATA FETCH (Live Price for Entry) ---
+def get_live_price():
+    try:
+        # TradingView jevi exact live price lavva mate (Yahoo Finance thi)
+        ticker = yf.Ticker("GC=F")
+        data = ticker.history(period="1d", interval="1m")
+        if not data.empty:
+            return round(float(data['Close'].iloc[-1]), 3)
+    except:
+        pass
+    return 0
 
-sessions_html = get_market_sessions()
-st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍 Market Sessions</div>{sessions_html}</div>', unsafe_allow_html=True)
-
-# --- SMART STRATEGY (Backtest + Live) ---
-@st.cache_data(ttl=300)
+# --- SMART STRATEGY ---
 def get_smart_signal():
     try:
-        # Live Data (1 Minute interval thi exact entry male)
+        # 15-minute data Strategy mate (Yahoo Finance)
         df = yf.download("GC=F", period="60d", interval="15m", progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -58,8 +47,6 @@ def get_smart_signal():
         if df.empty or len(df) < 50:
             return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
 
-        # Indicators
-        df['SMA_20'] = df['Close'].rolling(window=20).mean()
         df['SMA_50'] = df['Close'].rolling(window=50).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -68,8 +55,11 @@ def get_smart_signal():
         df['RSI'] = 100 - (100 / (1 + rs))
         df.dropna(inplace=True)
 
-        # Current Price (Live Candle)
-        current_price = float(df['Close'].iloc[-1])
+        # Have aapde Live price alag thi laishu
+        live_price = get_live_price()
+        if live_price == 0:
+            live_price = float(df['Close'].iloc[-1]) # Jo live na male to data mathi
+
         current_rsi = float(df['RSI'].iloc[-1])
         current_sma = float(df['SMA_50'].iloc[-1])
 
@@ -78,13 +68,13 @@ def get_smart_signal():
         reason = "Market condition not clear."
         strategy_name = "No Strategy"
 
-        # STRATEGY 1: Trend Follow (SMA)
-        if current_price > current_sma and current_rsi < 70:
+        # STRATEGY 1: Trend Follow
+        if live_price > current_sma and current_rsi < 70:
             direction = "BUY"
             confidence = 70
             reason = "Price Above SMA 50 (Trend Up)"
             strategy_name = "Trend Follow (Up)"
-        elif current_price < current_sma and current_rsi > 30:
+        elif live_price < current_sma and current_rsi > 30:
             direction = "SELL"
             confidence = 70
             reason = "Price Below SMA 50 (Trend Down)"
@@ -108,25 +98,25 @@ def get_smart_signal():
             reason = "No clear trend"
             strategy_name = "No Setup"
 
-        # Targets (Live Price par thi)
+        # Targets (Have LIVE PRICE par thi calculate thashe)
         if direction == "BUY":
-            sl = round(current_price - 8.0, 2)
-            tp1 = round(current_price + 10.0, 2)
-            tp2 = round(current_price + 15.0, 2)
+            sl = round(live_price - 8.0, 2)
+            tp1 = round(live_price + 10.0, 2)
+            tp2 = round(live_price + 15.0, 2)
         elif direction == "SELL":
-            sl = round(current_price + 8.0, 2)
-            tp1 = round(current_price - 10.0, 2)
-            tp2 = round(current_price - 15.0, 2)
+            sl = round(live_price + 8.0, 2)
+            tp1 = round(live_price - 10.0, 2)
+            tp2 = round(live_price - 15.0, 2)
         else:
             sl, tp1, tp2 = 0, 0, 0
 
-        return direction, confidence, round(current_price, 2), sl, tp1, tp2, reason, strategy_name
+        return direction, confidence, live_price, sl, tp1, tp2, reason, strategy_name
 
     except Exception as e:
         return "WAIT", 0, 0, 0, 0, "System Error", "N/A"
 
 # --- APP UI ---
-with st.spinner('Analyzing Live Candle & Strategy...'):
+with st.spinner('Fetching Live Price & Strategy...'):
     direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_smart_signal()
 
 # --- LIVE CHART ---
