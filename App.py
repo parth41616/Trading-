@@ -10,7 +10,7 @@ import yfinance as yf
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
-st.set_page_config(page_title="Gold AI (Spot Live)", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold AI (BoS Strategy)", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -20,13 +20,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🪙 Gold AI (Spot Live)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Exact Spot Price with 15-Min Strategy</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🪙 Gold AI (BoS Strategy)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Break of Structure (Smart Money Concept)</div>', unsafe_allow_html=True)
 
-# --- SMART STRATEGY (Yahoo Finance thi) ---
-def get_smart_signal():
+# --- BOS STRATEGY (Break of Structure) ---
+def get_bos_signal():
     try:
-        # 15-minute no data Yahoo thi
+        # 15-Minute Data (Last 60 Days)
         df = yf.download("GC=F", period="60d", interval="15m", progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -34,72 +34,53 @@ def get_smart_signal():
         if df.empty or len(df) < 50:
             return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
 
-        df['SMA_50'] = df['Close'].rolling(window=50).mean()
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-        df.dropna(inplace=True)
+        # Live Price
+        current_price = round(float(df['Close'].iloc[-1]), 2)
 
-        # Yahoo nu price GC=F (Futures) hovathi Spot karta thodu alag hase
-        live_price = round(float(df['Close'].iloc[-1]), 2)
-        current_rsi = float(df['RSI'].iloc[-1])
-        current_sma = float(df['SMA_50'].iloc[-1])
+        # 1. Last 20 Candles no High ane Low sodhiye
+        recent_high = float(df['High'].iloc[-20:-1].max())
+        recent_low = float(df['Low'].iloc[-20:-1].min())
 
         direction = "WAIT"
         confidence = 0
         reason = "Market condition not clear."
-        strategy_name = "No Strategy"
+        strategy_name = "BoS Analysis"
 
-        # Strategy Logic
-        if live_price > current_sma and current_rsi < 70:
+        # 2. BoS Logic
+        # Jo price last High ne break kare to BUY
+        if current_price > recent_high:
             direction = "BUY"
-            confidence = 70
-            reason = "Price Above SMA 50 (Trend Up)"
-            strategy_name = "Trend Follow (Up)"
-        elif live_price < current_sma and current_rsi > 30:
+            confidence = 85
+            reason = f"Breakout Above {recent_high} (Bullish BoS)"
+            strategy_name = "Break of Structure (Buy)"
+        
+        # Jo price last Low ne break kare to SELL
+        elif current_price < recent_low:
             direction = "SELL"
-            confidence = 70
-            reason = "Price Below SMA 50 (Trend Down)"
-            strategy_name = "Trend Follow (Down)"
-        elif current_rsi < 30:
-            direction = "BUY"
-            confidence = 80
-            reason = "Oversold (RSI < 30)"
-            strategy_name = "RSI Reversal (Buy)"
-        elif current_rsi > 70:
-            direction = "SELL"
-            confidence = 80
-            reason = "Overbought (RSI > 70)"
-            strategy_name = "RSI Reversal (Sell)"
-        else:
-            direction = "WAIT"
-            confidence = 0
-            reason = "No clear trend"
-            strategy_name = "No Setup"
-
-        # Targets
+            confidence = 85
+            reason = f"Breakout Below {recent_low} (Bearish BoS)"
+            strategy_name = "Break of Structure (Sell)"
+        
+        # 3. Targets (BoS mujab)
         if direction == "BUY":
-            sl = round(live_price - 8.0, 2)
-            tp1 = round(live_price + 10.0, 2)
-            tp2 = round(live_price + 15.0, 2)
+            sl = round(recent_low, 2) # Last swing low ne SL
+            tp1 = round(current_price + (current_price - sl), 2)
+            tp2 = round(current_price + (current_price - sl) * 1.5, 2)
         elif direction == "SELL":
-            sl = round(live_price + 8.0, 2)
-            tp1 = round(live_price - 10.0, 2)
-            tp2 = round(live_price - 15.0, 2)
+            sl = round(recent_high, 2) # Last swing high ne SL
+            tp1 = round(current_price - (sl - current_price), 2)
+            tp2 = round(current_price - (sl - current_price) * 1.5, 2)
         else:
             sl, tp1, tp2 = 0, 0, 0
 
-        return direction, confidence, live_price, sl, tp1, tp2, reason, strategy_name
+        return direction, confidence, current_price, sl, tp1, tp2, reason, strategy_name
 
     except Exception as e:
-        # Jo koi pan error aave to safe return
         return "WAIT", 0, 0, 0, 0, "System Error", "N/A"
 
 # --- APP UI ---
-with st.spinner('Fetching Spot Price & Strategy...'):
-    direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_smart_signal()
+with st.spinner('Analyzing Break of Structure...'):
+    direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_bos_signal()
 
 # --- LIVE CHART ---
 live_chart_html = """
@@ -117,7 +98,7 @@ color = '#10B981' if direction == 'BUY' else '#EF4444' if direction == 'SELL' el
 
 st.markdown(f"""
 <div class="card">
-    <div style="display: flex; justify-content: space-between;"><span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live Smart Signal</span></div>
+    <div style="display: flex; justify-content: space-between;"><span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live BoS Signal</span></div>
     <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
         <span style="color: #9CA3AF; font-size: 14px;">Direction</span><br>
         <span style="color: {color}; font-size: 26px; font-weight: bold;">{direction}</span>
