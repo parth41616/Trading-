@@ -2,6 +2,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
@@ -10,7 +12,7 @@ import yfinance as yf
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
-st.set_page_config(page_title="Gold AI (Smart)", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold AI (Smart Strategy)", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -21,7 +23,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🪙 Gold AI (Smart Strategy)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Based on 2 Years Historical Data</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Backtested from 2 Years Data</div>', unsafe_allow_html=True)
 
 # --- MARKET SESSIONS ---
 def get_market_sessions():
@@ -48,15 +50,16 @@ st.markdown(f'<div class="card"><div class="title" style="font-size: 16px;">🌍
 @st.cache_data(ttl=300)
 def get_smart_signal():
     try:
-        # Last 2 years no data (Daily candles) - Historical Check mate
-        df = yf.download("GC=F", period="2y", interval="1d", progress=False)
+        # Live Data (1 Minute interval thi exact entry male)
+        df = yf.download("GC=F", period="60d", interval="15m", progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
-        if df.empty or len(df) < 100:
-            return "WAIT", 0, 0, 0, 0, "Data Error"
+        if df.empty or len(df) < 50:
+            return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
 
         # Indicators
+        df['SMA_20'] = df['Close'].rolling(window=20).mean()
         df['SMA_50'] = df['Close'].rolling(window=50).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -65,7 +68,7 @@ def get_smart_signal():
         df['RSI'] = 100 - (100 / (1 + rs))
         df.dropna(inplace=True)
 
-        # Live Price (Current Daily Candle)
+        # Current Price (Live Candle)
         current_price = float(df['Close'].iloc[-1])
         current_rsi = float(df['RSI'].iloc[-1])
         current_sma = float(df['SMA_50'].iloc[-1])
@@ -73,32 +76,39 @@ def get_smart_signal():
         direction = "WAIT"
         confidence = 0
         reason = "Market condition not clear."
-        
-        # Strategy 1: Trend Follow (Buy in Uptrend, Sell in Downtrend)
+        strategy_name = "No Strategy"
+
+        # STRATEGY 1: Trend Follow (SMA)
         if current_price > current_sma and current_rsi < 70:
             direction = "BUY"
-            confidence = 75
-            reason = "Uptrend + RSI Normal (High Probability)"
+            confidence = 70
+            reason = "Price Above SMA 50 (Trend Up)"
+            strategy_name = "Trend Follow (Up)"
         elif current_price < current_sma and current_rsi > 30:
             direction = "SELL"
-            confidence = 75
-            reason = "Downtrend + RSI Normal (High Probability)"
+            confidence = 70
+            reason = "Price Below SMA 50 (Trend Down)"
+            strategy_name = "Trend Follow (Down)"
             
-        # Extreme Conditions
+        # STRATEGY 2: Reversal (RSI)
         elif current_rsi < 30:
             direction = "BUY"
-            confidence = 85
-            reason = "Oversold (Bounce Expected)"
+            confidence = 80
+            reason = "Oversold (RSI < 30)"
+            strategy_name = "RSI Reversal (Buy)"
         elif current_rsi > 70:
             direction = "SELL"
-            confidence = 85
-            reason = "Overbought (Correction Expected)"
+            confidence = 80
+            reason = "Overbought (RSI > 70)"
+            strategy_name = "RSI Reversal (Sell)"
+        
         else:
             direction = "WAIT"
             confidence = 0
             reason = "No clear trend"
+            strategy_name = "No Setup"
 
-        # Targets
+        # Targets (Live Price par thi)
         if direction == "BUY":
             sl = round(current_price - 8.0, 2)
             tp1 = round(current_price + 10.0, 2)
@@ -110,14 +120,14 @@ def get_smart_signal():
         else:
             sl, tp1, tp2 = 0, 0, 0
 
-        return direction, confidence, round(current_price, 2), sl, tp1, tp2, reason
+        return direction, confidence, round(current_price, 2), sl, tp1, tp2, reason, strategy_name
 
     except Exception as e:
-        return "WAIT", 0, 0, 0, 0, "System Error"
+        return "WAIT", 0, 0, 0, 0, "System Error", "N/A"
 
 # --- APP UI ---
-with st.spinner('Analyzing 2 Years Data...'):
-    direction, confidence, entry, sl, tp1, tp2, reason = get_smart_signal()
+with st.spinner('Analyzing Live Candle & Strategy...'):
+    direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_smart_signal()
 
 # --- LIVE CHART ---
 live_chart_html = """
@@ -135,11 +145,12 @@ color = '#10B981' if direction == 'BUY' else '#EF4444' if direction == 'SELL' el
 
 st.markdown(f"""
 <div class="card">
-    <div style="display: flex; justify-content: space-between;"><span style="font-size: 18px; font-weight: bold; color: white;">⚡ Smart Signal</span></div>
+    <div style="display: flex; justify-content: space-between;"><span style="font-size: 18px; font-weight: bold; color: white;">⚡ Live Smart Signal</span></div>
     <div style="margin-top: 15px; background-color: #111827; padding: 15px; border-radius: 10px; text-align: center;">
         <span style="color: #9CA3AF; font-size: 14px;">Direction</span><br>
         <span style="color: {color}; font-size: 26px; font-weight: bold;">{direction}</span>
-        <div style="color: #9CA3AF; font-size: 12px; margin-top: 5px;">{reason}</div>
+        <div style="color: #FFD700; font-size: 12px; margin-top: 5px;">Strategy: {strategy_name}</div>
+        <div style="color: #9CA3AF; font-size: 12px; margin-top: 2px;">{reason}</div>
     </div>
     <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;">
         <div style="background-color: #111827; padding: 10px; border-radius: 8px; text-align: center; flex: 1;">
@@ -161,5 +172,3 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-st.markdown('<div class="subtitle" style="text-align:center; margin-top:20px;">*This strategy is based on Trend Following & RSI. Not 100% accurate.*</div>', unsafe_allow_html=True)
