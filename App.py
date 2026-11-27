@@ -5,13 +5,14 @@ import numpy as np
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
-import yfinance as yf
 import requests
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
-st.set_page_config(page_title="Gold AI (Smart)", page_icon="🪙", layout="centered")
+TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
+
+st.set_page_config(page_title="Gold AI (Live Spot)", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -21,28 +22,32 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🪙 Gold AI (Live Data)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Smart Strategy with Exact Live Price</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🪙 Gold AI (Spot Live)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Exact Spot Price with 15-Min Strategy</div>', unsafe_allow_html=True)
 
-# --- DATA FETCH (Live Price for Entry) ---
-def get_live_price():
+# --- DATA FETCH (Twelve Data - Spot XAU/USD) ---
+def fetch_twelvedata(symbol, interval, outputsize):
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
-        # TradingView jevi exact live price lavva mate (Yahoo Finance thi)
-        ticker = yf.Ticker("GC=F")
-        data = ticker.history(period="1d", interval="1m")
-        if not data.empty:
-            return round(float(data['Close'].iloc[-1]), 3)
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        if data.get("status") != "error" and "values" in data:
+            df = pd.DataFrame(data["values"])
+            df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            df.set_index('datetime', inplace=True)
+            df.sort_index(inplace=True)
+            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            return df
     except:
         pass
-    return 0
+    return pd.DataFrame()
 
-# --- SMART STRATEGY ---
+# --- SMART STRATEGY (Live Spot) ---
 def get_smart_signal():
     try:
-        # 15-minute data Strategy mate (Yahoo Finance)
-        df = yf.download("GC=F", period="60d", interval="15m", progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        # Spot XAU/USD (Tamara MT5 sathe match thashe)
+        df = fetch_twelvedata("XAU/USD", "15min", 500)
         
         if df.empty or len(df) < 50:
             return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
@@ -55,11 +60,8 @@ def get_smart_signal():
         df['RSI'] = 100 - (100 / (1 + rs))
         df.dropna(inplace=True)
 
-        # Have aapde Live price alag thi laishu
-        live_price = get_live_price()
-        if live_price == 0:
-            live_price = float(df['Close'].iloc[-1]) # Jo live na male to data mathi
-
+        # Exact Live Price (Spot Price)
+        live_price = round(float(df['Close'].iloc[-1]), 3)
         current_rsi = float(df['RSI'].iloc[-1])
         current_sma = float(df['SMA_50'].iloc[-1])
 
@@ -98,7 +100,7 @@ def get_smart_signal():
             reason = "No clear trend"
             strategy_name = "No Setup"
 
-        # Targets (Have LIVE PRICE par thi calculate thashe)
+        # Targets (Exact Live Price par thi)
         if direction == "BUY":
             sl = round(live_price - 8.0, 2)
             tp1 = round(live_price + 10.0, 2)
@@ -116,10 +118,10 @@ def get_smart_signal():
         return "WAIT", 0, 0, 0, 0, "System Error", "N/A"
 
 # --- APP UI ---
-with st.spinner('Fetching Live Price & Strategy...'):
+with st.spinner('Fetching Spot Price & Strategy...'):
     direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_smart_signal()
 
-# --- LIVE CHART ---
+# --- LIVE CHART (Spot XAUUSD - Binance/TradingView source thi) ---
 live_chart_html = """
 <div class="tradingview-widget-container" style="height:200px;width:100%">
   <div class="tradingview-widget-container__widget"></div>
