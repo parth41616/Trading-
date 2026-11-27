@@ -5,12 +5,10 @@ import numpy as np
 from datetime import datetime, time
 import pytz
 from streamlit_autorefresh import st_autorefresh
-import requests
+import yfinance as yf
 
 # --- AUTO REFRESH (5 Minutes) ---
 st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
-
-TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 
 st.set_page_config(page_title="Gold AI (BoS Live)", page_icon="🪙", layout="centered")
 st.markdown("""
@@ -25,33 +23,18 @@ st.markdown("""
 st.markdown('<div class="title">🪙 Gold AI (BoS Live)</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Exact Spot Price with Break of Structure</div>', unsafe_allow_html=True)
 
-# --- DATA FETCH (Twelve Data - Spot XAU/USD) ---
-def fetch_twelvedata(symbol, interval, outputsize):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
-    try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        if data.get("status") != "error" and "values" in data:
-            df = pd.DataFrame(data["values"])
-            df = df.astype({'open': 'float', 'high': 'float', 'low': 'float', 'close': 'float'})
-            df['datetime'] = pd.to_datetime(df['datetime'])
-            df.set_index('datetime', inplace=True)
-            df.sort_index(inplace=True)
-            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-            return df
-    except:
-        pass
-    return pd.DataFrame()
-
-# --- BOS STRATEGY (Live Spot) ---
+# --- BOS STRATEGY (Yahoo Finance) ---
 def get_bos_signal():
     try:
-        df = fetch_twelvedata("XAU/USD", "15min", 500)
-        
+        # 15-Minute Data (Last 60 Days)
+        df = yf.download("GC=F", period="60d", interval="15m", progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
         if df.empty or len(df) < 50:
             return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
 
-        current_price = round(float(df['Close'].iloc[-1]), 3)
+        current_price = round(float(df['Close'].iloc[-1]), 2)
 
         # Last 20 Candles no High ane Low
         recent_high = float(df['High'].iloc[-20:-1].max())
@@ -93,10 +76,10 @@ def get_bos_signal():
         return "WAIT", 0, 0, 0, 0, "System Error", "N/A"
 
 # --- APP UI ---
-with st.spinner('Analyzing Break of Structure (Spot)...'):
+with st.spinner('Analyzing Break of Structure...'):
     direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_bos_signal()
 
-# --- LIVE CHART (TradingView) ---
+# --- LIVE CHART ---
 live_chart_html = """
 <div class="tradingview-widget-container" style="height:200px;width:100%">
   <div class="tradingview-widget-container__widget"></div>
