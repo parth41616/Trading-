@@ -12,7 +12,7 @@ st_autorefresh(interval=5 * 60 * 1000, limit=None, key="auto_refresh")
 
 TWELVE_DATA_KEY = '4c470e5fed854bbaa4b4c3a38a11499e'
 
-st.set_page_config(page_title="Gold AI (Live Spot)", page_icon="🪙", layout="centered")
+st.set_page_config(page_title="Gold AI (Spot Live)", page_icon="🪙", layout="centered")
 st.markdown("""
 <style>
     .stApp { background-color: #111827; color: white; }
@@ -46,10 +46,10 @@ def fetch_twelvedata(symbol, interval, outputsize):
 # --- SMART STRATEGY (Live Spot) ---
 def get_smart_signal():
     try:
-        # Spot XAU/USD (Tamara MT5 sathe match thashe)
         df = fetch_twelvedata("XAU/USD", "15min", 500)
         
         if df.empty or len(df) < 50:
+            # Jo data na aave to safe return
             return "WAIT", 0, 0, 0, 0, "Data Error", "N/A"
 
         df['SMA_50'] = df['Close'].rolling(window=50).mean()
@@ -60,7 +60,6 @@ def get_smart_signal():
         df['RSI'] = 100 - (100 / (1 + rs))
         df.dropna(inplace=True)
 
-        # Exact Live Price (Spot Price)
         live_price = round(float(df['Close'].iloc[-1]), 3)
         current_rsi = float(df['RSI'].iloc[-1])
         current_sma = float(df['SMA_50'].iloc[-1])
@@ -70,7 +69,7 @@ def get_smart_signal():
         reason = "Market condition not clear."
         strategy_name = "No Strategy"
 
-        # STRATEGY 1: Trend Follow
+        # Strategy Logic
         if live_price > current_sma and current_rsi < 70:
             direction = "BUY"
             confidence = 70
@@ -81,8 +80,6 @@ def get_smart_signal():
             confidence = 70
             reason = "Price Below SMA 50 (Trend Down)"
             strategy_name = "Trend Follow (Down)"
-            
-        # STRATEGY 2: Reversal (RSI)
         elif current_rsi < 30:
             direction = "BUY"
             confidence = 80
@@ -93,14 +90,13 @@ def get_smart_signal():
             confidence = 80
             reason = "Overbought (RSI > 70)"
             strategy_name = "RSI Reversal (Sell)"
-        
         else:
             direction = "WAIT"
             confidence = 0
             reason = "No clear trend"
             strategy_name = "No Setup"
 
-        # Targets (Exact Live Price par thi)
+        # Targets
         if direction == "BUY":
             sl = round(live_price - 8.0, 2)
             tp1 = round(live_price + 10.0, 2)
@@ -115,13 +111,14 @@ def get_smart_signal():
         return direction, confidence, live_price, sl, tp1, tp2, reason, strategy_name
 
     except Exception as e:
+        # Jo koi pan error aave to safe return
         return "WAIT", 0, 0, 0, 0, "System Error", "N/A"
 
 # --- APP UI ---
 with st.spinner('Fetching Spot Price & Strategy...'):
     direction, confidence, entry, sl, tp1, tp2, reason, strategy_name = get_smart_signal()
 
-# --- LIVE CHART (Spot XAUUSD - Binance/TradingView source thi) ---
+# --- LIVE CHART ---
 live_chart_html = """
 <div class="tradingview-widget-container" style="height:200px;width:100%">
   <div class="tradingview-widget-container__widget"></div>
